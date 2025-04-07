@@ -24,15 +24,124 @@ pub enum TreeError {
 }
 
 impl Tree {
-    pub fn unroot(&mut self) -> Option<NodeId> {
+    pub fn root(&mut self, node_id: NodeId) -> Option<NodeId> {
+        let yanked_node = self.unroot();
+        if let Some(left_id) = self.first_node_id {
+            let new_root_id = self
+                .add_new_node(<Option<&str>>::None, None, None)
+                .ok()
+                .unwrap();
+
+            let path = self.path(node_id, left_id);
+            let brl_new_out: TreeFloat = self.branch_length(node_id).unwrap_or_default() / 2e0;
+            // println!("{node_id}:{brl_new_out} <- new out");
+            if self.has_branch_lengths {
+                self.nodes[node_id].set_branch_length(Some(brl_new_out));
+            }
+            self.nodes[node_id].set_parent_id(Some(new_root_id));
+
+            // println!("---");
+            // println!("{new_root_id} <- new root");
+            self.nodes[new_root_id].add_child_id(node_id);
+            // println!("---");
+
+            let mut prev_brl = brl_new_out;
+            let mut prev_par = new_root_id;
+            for &id in &path {
+                // println!("{id}:{prev_brl} {prev_par} <- to reverse");
+                let brl_tmp = self.branch_length(id).unwrap_or_default();
+                if self.has_branch_lengths {
+                    self.nodes[id].set_branch_length(Some(prev_brl));
+                }
+                self.nodes[prev_par].add_child_id(id);
+                self.nodes[id].set_parent_id(Some(prev_par));
+                self.nodes[id].remove_child_id(&prev_par);
+                self.nodes[id].remove_child_id(&node_id);
+                prev_brl = brl_tmp;
+                prev_par = id;
+            }
+
+            let mut new_node_name: Option<String> = None;
+            if let Some(yanked_node) = yanked_node {
+                if let Some(name) = yanked_node.name() {
+                    new_node_name = Some(name.to_string());
+                }
+            }
+
+            // println!("NEW LAST:{prev_brl} {prev_par} <- new last");
+            let new_last = self
+                .add_new_node(new_node_name.as_deref(), None, Some(prev_par))
+                .ok()
+                .unwrap();
+
+            if self.has_branch_lengths {
+                self.nodes[new_last].set_branch_length(Some(prev_brl));
+            }
+
+            let id_to_ignore: NodeId = if !path.is_empty() {
+                path[path.len() - 1]
+            } else {
+                node_id
+            };
+
+            let tmp_chld_ids = self.child_ids(left_id).to_vec();
+
+            for id in tmp_chld_ids {
+                if id != id_to_ignore {
+                    // let brl_last = self.branch_length(id).unwrap_or_default();
+                    // println!("{id}:{brl_last:<5.3} <- child of last");
+                    self.nodes[new_last].add_child_id(id);
+                    self.nodes[id].set_parent_id(Some(new_last));
+                }
+            }
+            self.nodes.remove(left_id);
+        }
+        let _ = self.validate();
+        self.first_node_id
+    }
+
+    pub fn path(&self, right_id: NodeId, left_id: NodeId) -> Vec<NodeId> {
+        let mut rv: Vec<NodeId> = Vec::new();
+        if left_id == right_id {
+            return rv;
+        }
+
+        if let Some(&parent_id) = self.parent_id(right_id) {
+            if parent_id != left_id {
+                rv.push(parent_id);
+                rv.extend(self.path(parent_id, left_id));
+            }
+        } else {
+            return rv;
+        }
+
+        rv
+    }
+
+    pub fn node_id_by_name<'a>(&self, name: impl Into<&'a str>) -> Option<NodeId> {
+        let name: &str = name.into();
+        self.nodes.iter().find_map(|(node_id, node)| {
+            if let Some(node_name) = node.name() {
+                if node_name == name.into() {
+                    Some(node_id)
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        })
+    }
+
+    pub fn unroot(&mut self) -> Option<Node> {
+        let mut yanked_node: Option<Node> = None;
         if let Some(node_to_drop_id) = self.unroot_pick_node_to_drop() {
             self.slide_brlen_through_root(node_to_drop_id);
+            yanked_node = self.node(Some(node_to_drop_id)).cloned();
             self.yank_node(node_to_drop_id);
             let _ = self.validate();
-        } else {
-            return None;
         }
-        self.first_node_id
+        yanked_node
     }
 
     fn yank_node(&mut self, node_id: NodeId) {

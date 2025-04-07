@@ -20,8 +20,10 @@ pub fn flatten_tree(tree: &Tree, chunk_count: usize) -> Vec<Edges> {
     let tree_height = tree.height();
     let mut tip_id_counter = ntip;
     if let Some(id) = tree.first_node_id() {
-        let edges: Edges = flatten(id, None, 0e0, tree, tree_height, ntip, &mut tip_id_counter);
-        chunk_edges(calc_verticals(edges), chunk_count)
+        let mut edges: Edges = flatten(id, None, 0e0, tree, tree_height, ntip, &mut tip_id_counter);
+        edges = calc_verticals(edges);
+        edges.sort_by(|a, b| a.y.total_cmp(&b.y));
+        chunk_edges(edges, chunk_count)
     } else {
         Vec::new()
     }
@@ -85,8 +87,8 @@ fn calc_verticals(mut edges: Edges) -> Edges {
         return edges;
     }
 
-    edges.sort_by(|a, b| a.y.total_cmp(&b.y));
     edges.sort_by_key(|x| x.child);
+    edges.sort_by(|a, b| a.y.total_cmp(&b.y));
     edges.sort_by(|a, b| b.parent.cmp(&a.parent));
 
     let mut mem: BTreeMap<NodeId, TreeFloat> = BTreeMap::new();

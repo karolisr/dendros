@@ -31,7 +31,7 @@
                 },
                 {
                     "match": ".*/(examples|(phylo))/(tree).*\\.rs$",
-                    "cmd": "echo && cd . &>/dev/null || cd . && cargo run --quiet --example tree && echo"
+                    "cmd": "echo && cd . &>/dev/null || cd . && cargo run --quiet --example newick && echo"
                 },
                 {
                     "match": ".*/(examples|.*)/(newick|flatten).*\\.rs$",
