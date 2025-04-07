@@ -12,6 +12,7 @@ pub struct Tree {
     tip_count_all: usize,
     internal_node_count_all: usize,
     node_count_all: usize,
+    has_branch_lengths: bool,
 }
 
 #[derive(Debug, Error)]
@@ -23,20 +24,131 @@ pub enum TreeError {
 }
 
 impl Tree {
-    pub fn unroot(&self) {
-        unimplemented!()
+    pub fn unroot(&self) {}
+
+    pub fn has_branch_lengths(&self) -> bool {
+        self.has_branch_lengths
+    }
+
+    pub fn is_tip(&self, node_id: NodeId) -> bool {
+        self.nodes[node_id].is_tip()
+    }
+
+    pub fn tip_node_ids(&self, node_id: NodeId) -> Vec<NodeId> {
+        let cs: &[NodeId] = self.child_ids(node_id);
+        let mut rv: Vec<NodeId> = Vec::new();
+        for &c in cs {
+            if self.is_tip(c) {
+                rv.push(c);
+            } else {
+                rv.append(&mut self.tip_node_ids(c));
+            }
+        }
+        rv
+    }
+
+    pub fn tip_node_ids_all(&self) -> Vec<NodeId> {
+        if let Some(id) = self.first_node_id {
+            self.tip_node_ids(id)
+        } else {
+            Vec::new()
+        }
     }
 
     pub fn height(&self) -> TreeFloat {
-        unimplemented!()
+        let mut h = 0e0;
+        if let Some(id) = self.first_node_id {
+            for right in self.tip_node_ids_all() {
+                let curr = self.dist(id, right);
+                if curr > h {
+                    h = curr
+                }
+            }
+        }
+        h
+    }
+
+    pub fn dist(&self, left: NodeId, right: NodeId) -> TreeFloat {
+        let mut h: TreeFloat = 0e0;
+        if left != right {
+            h += self.branch_length(right).unwrap_or(0e0);
+        }
+        match self.parent_id(right) {
+            Some(&p) => {
+                if p == left {
+                    h
+                } else {
+                    h + self.dist(left, p)
+                }
+            }
+            None => 0e0,
+        }
+    }
+
+    pub fn child_count(&self, node_id: NodeId) -> usize {
+        self.nodes[node_id].child_node_count()
+    }
+
+    pub fn child_count_recursive(&self, node_id: NodeId) -> usize {
+        let mut rv: usize = self.child_count(node_id);
+        for &child_id in self.child_ids(node_id) {
+            rv += self.child_count_recursive(child_id)
+        }
+        rv
     }
 
     pub fn sort(&mut self, reverse: bool) {
-        unimplemented!()
+        if let Some(id) = self.first_node_id {
+            self.sort_nodes(id, reverse);
+        }
+    }
+
+    fn sort_nodes(&mut self, node_id: NodeId, reverse: bool) {
+        let mut sorted_ids: Vec<NodeId> = self.nodes[node_id].child_ids().to_vec();
+        sorted_ids.sort_by_key(|c| self.child_count_recursive(*c));
+        if reverse {
+            sorted_ids.reverse();
+        }
+        for &id in &sorted_ids {
+            self.sort_nodes(id, reverse);
+        }
+        self.nodes[node_id].set_child_ids(sorted_ids);
+    }
+
+    pub fn tip_count_recursive(&self, node_id: NodeId) -> usize {
+        let mut rv: usize = 0;
+        for &child_id in self.child_ids(node_id) {
+            if !self.is_tip(child_id) {
+                rv += self.tip_count_recursive(child_id)
+            } else {
+                rv += 1
+            }
+        }
+        rv
+    }
+
+    pub fn tip_count(&self, node_id: NodeId) -> usize {
+        let mut rv: usize = 0;
+        for child_node in self.children(node_id) {
+            if child_node.is_tip() {
+                rv += 1
+            }
+        }
+        rv
+    }
+
+    pub fn new() -> Self {
+        Self::default()
     }
 
     pub fn branch_length(&self, node_id: NodeId) -> Option<TreeFloat> {
-        self.nodes[node_id].branch_length()
+        if self.has_branch_lengths {
+            self.nodes[node_id].branch_length()
+        } else if Some(node_id) == self.first_node_id {
+            None
+        } else {
+            Some(1e0)
+        }
     }
 
     pub fn tip_count_all(&self) -> usize {
@@ -51,30 +163,12 @@ impl Tree {
         self.node_count_all
     }
 
-    pub fn tip_count(&self, node_id: NodeId) -> usize {
-        let mut rv: usize = 0;
-        if self.nodes[node_id].is_tip() {
-            rv = 1;
-        } else {
-            for child_node in self.children(node_id) {
-                if child_node.is_tip() {
-                    rv += 1
-                }
-            }
-        }
-        rv
-    }
-
-    pub fn tip_count_recursive(&self, node_id: NodeId) -> usize {
-        unimplemented!()
-    }
-
-    pub fn new() -> Self {
-        Self::default()
-    }
-
     pub fn name(&self, node_id: NodeId) -> Option<Arc<str>> {
         self.nodes[node_id].name()
+    }
+
+    pub fn parent_id(&self, node_id: NodeId) -> Option<&NodeId> {
+        self.nodes[node_id].parent_id()
     }
 
     pub fn child_ids(&self, node_id: NodeId) -> &[NodeId] {
@@ -188,6 +282,8 @@ impl Tree {
         let mut count_of_first: usize = 0;
         let mut count_of_root: usize = 0;
 
+        let mut has_branch_lengths: bool = false;
+
         for node in self.nodes.values_mut() {
             match node.set_node_type() {
                 NodeType::Unset => count_of_unset += 1,
@@ -206,6 +302,13 @@ impl Tree {
                     }
                 }
             };
+
+            if node.node_type() != NodeType::FirstNode && node.node_type() != NodeType::Root {
+                match node.branch_length() {
+                    Some(_) => has_branch_lengths = true,
+                    None => has_branch_lengths = false,
+                }
+            }
         }
 
         if count_of_first + count_of_root != 1 {
@@ -224,6 +327,8 @@ impl Tree {
         self.internal_node_count_all = count_of_internal + count_of_first + count_of_root;
         self.node_count_all = self.tip_count_all + self.internal_node_count_all;
 
+        self.has_branch_lengths = has_branch_lengths;
+
         if let Some(node) = self.node_mut(self.first_node_id) {
             node.set_branch_length(None);
         }
@@ -234,14 +339,16 @@ impl Tree {
     fn print_tree(&self) -> String {
         let mut rv: String = String::new();
         rv.push_str(&format!(
-            "Tips: {}\nInternal Nodes: {}\nAll Nodes: {}\n{}\n\n",
+            "Tips: {}\nInternal Nodes: {}\nAll Nodes: {}\n{}\nHeight: {:7.5}\nBranch lengths: {}\n\n",
             self.tip_count_all,
             self.internal_node_count_all,
             self.node_count_all,
             match self.is_rooted() {
                 true => "Rooted",
                 false => "Unrooted",
-            }
+            },
+            self.height(),
+            self.has_branch_lengths()
         ));
 
         if let Some(node) = self.node(self.first_node_id) {

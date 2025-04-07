@@ -34,7 +34,7 @@
                     "cmd": "echo && cd . &>/dev/null || cd . && cargo run --quiet --example tree && echo"
                 },
                 {
-                    "match": ".*/(examples|.*)/(newick).*\\.rs$",
+                    "match": ".*/(examples|.*)/(newick|flatten).*\\.rs$",
                     "cmd": "echo && cd . &>/dev/null || cd . && cargo run --quiet --example newick && echo"
                 },
             ]

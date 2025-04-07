@@ -37,6 +37,14 @@ impl Node {
         &self.child_ids
     }
 
+    pub(crate) fn set_child_ids(&mut self, child_ids: Vec<NodeId>) {
+        self.child_ids = child_ids
+    }
+
+    pub fn child_node_count(&self) -> usize {
+        self.child_ids.len()
+    }
+
     pub fn add_child_id(&mut self, node_id: NodeId) {
         self.child_ids.push(node_id)
     }

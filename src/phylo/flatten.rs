@@ -84,12 +84,10 @@ fn calc_verticals(mut edges: Edges) -> Edges {
     if edges.is_empty() {
         return edges;
     }
+
     edges.sort_by(|a, b| a.y.total_cmp(&b.y));
-    // edges.reverse();
     edges.sort_by_key(|x| x.child);
-    edges.reverse();
-    edges.sort_by_key(|x| x.parent);
-    edges.reverse();
+    edges.sort_by(|a, b| b.parent.cmp(&a.parent));
 
     let mut mem: BTreeMap<NodeId, TreeFloat> = BTreeMap::new();
     let mut parent_prev = edges[0].parent;
