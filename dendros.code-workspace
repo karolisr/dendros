@@ -1,0 +1,49 @@
+{
+    "folders": [
+        {
+            "path": "."
+        },
+        // {
+        //     "path": "src"
+        // },
+        // {
+        //     "path": "tests"
+        // },
+        // {
+        //     "path": "examples"
+        // },
+    ],
+    "settings": {
+        "editor.rulers": [
+            100,
+        ],
+        "launch": {
+            "configurations": [],
+            "compounds": []
+        },
+        "rust-analyzer.completion.hideDeprecated": true,
+        "emeraldwalk.runonsave": {
+            "autoClearConsole": true,
+            "commands": [
+                {
+                    "match": ".*/(examples|(phylo))/(node).*\\.rs$",
+                    "cmd": "echo && cd . &>/dev/null || cd . && cargo run --quiet --example tree && echo"
+                },
+                {
+                    "match": ".*/(examples|(phylo))/(tree).*\\.rs$",
+                    "cmd": "echo && cd . &>/dev/null || cd . && cargo run --quiet --example tree && echo"
+                },
+                {
+                    "match": ".*/(examples|.*)/(newick).*\\.rs$",
+                    "cmd": "echo && cd . &>/dev/null || cd . && cargo run --quiet --example newick && echo"
+                },
+            ]
+        },
+        "editor.wordWrap": "off",
+        "editor.formatOnPaste": true,
+        "editor.minimap.autohide": true
+    },
+    "extensions": {
+        "recommendations": []
+    }
+}
