@@ -31,12 +31,24 @@ impl Tree {
         unimplemented!()
     }
 
+    pub fn sort(&mut self, reverse: bool) {
+        unimplemented!()
+    }
+
     pub fn branch_length(&self, node_id: NodeId) -> Option<TreeFloat> {
         self.nodes[node_id].branch_length()
     }
 
     pub fn tip_count_all(&self) -> usize {
         self.tip_count_all
+    }
+
+    pub fn internal_node_count_all(&self) -> usize {
+        self.internal_node_count_all
+    }
+
+    pub fn node_count_all(&self) -> usize {
+        self.node_count_all
     }
 
     pub fn tip_count(&self, node_id: NodeId) -> usize {
