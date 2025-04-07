@@ -24,7 +24,110 @@ pub enum TreeError {
 }
 
 impl Tree {
-    pub fn unroot(&self) {}
+    pub fn unroot(&mut self) -> Option<NodeId> {
+        if let Some(node_to_drop_id) = self.unroot_pick_node_to_drop() {
+            self.slide_brlen_through_root(node_to_drop_id);
+            self.yank_node(node_to_drop_id);
+            let _ = self.validate();
+        } else {
+            return None;
+        }
+        self.first_node_id
+    }
+
+    fn yank_node(&mut self, node_id: NodeId) {
+        let child_ids = self.child_ids(node_id).to_vec();
+        if let Some(parent_node_id) = self.nodes[node_id].parent_id() {
+            let parent_node_id: NodeId = *parent_node_id;
+            let parent = self.nodes.get_mut(parent_node_id).unwrap();
+
+            parent.remove_child_id(&node_id);
+
+            for &child_id in &child_ids {
+                parent.add_child_id(child_id);
+            }
+
+            for &child_id in &child_ids {
+                let child = self.nodes.get_mut(child_id).unwrap();
+                child.set_parent_id(Some(parent_node_id));
+            }
+
+            self.nodes.remove(node_id);
+        }
+    }
+
+    fn slide_brlen_through_root(&mut self, source_node_id: NodeId) {
+        if !self.is_rooted() || !self.has_branch_lengths {
+            return;
+        }
+
+        let mut receive_node_id: NodeId = source_node_id;
+        for &other_id in self.child_ids(self.first_node_id.unwrap()) {
+            if other_id != source_node_id {
+                receive_node_id = other_id
+            }
+        }
+
+        assert_ne!(source_node_id, receive_node_id);
+
+        let source_node = &self.nodes[source_node_id];
+        let receive_node = &self.nodes[receive_node_id];
+
+        let mut new_brlen: TreeFloat = 0e0;
+        if let Some(source_brlen) = source_node.branch_length() {
+            if let Some(receive_brlen) = receive_node.branch_length() {
+                new_brlen = receive_brlen + source_brlen
+            } else {
+                new_brlen = source_brlen
+            }
+        }
+
+        self.nodes[source_node_id].set_branch_length(Some(0e0));
+        self.nodes[receive_node_id].set_branch_length(Some(new_brlen));
+    }
+
+    fn unroot_pick_node_to_drop(&self) -> Option<NodeId> {
+        if !self.is_rooted() {
+            return None;
+        }
+        if let Some(root_node) = self.node(self.first_node_id) {
+            if root_node.child_node_count() != 2 {
+                return None;
+            }
+        }
+        let root_chld = self.children(self.first_node_id.unwrap());
+        let c1 = root_chld[0];
+        let c2 = root_chld[1];
+
+        if c1.is_tip() && c2.is_tip() {
+            return None;
+        }
+
+        // At this point we know that at most one of c1 and c2 could still be a tip.
+        let node_to_drop;
+        if c1.is_tip() || c2.is_tip() {
+            if c1.is_tip() {
+                // c1 is a tip
+                node_to_drop = c2;
+            } else {
+                // c2 must be a tip a this point
+                node_to_drop = c1;
+            }
+        } else {
+            // The only possible state at this point is that neither c1 or c2 are tips.
+            // Arbitrarily drop the one with more total descending tips.
+            let tcr1 = self.tip_count_recursive(*c1.node_id().unwrap());
+            let tcr2 = self.tip_count_recursive(*c2.node_id().unwrap());
+
+            if tcr1 > tcr2 {
+                node_to_drop = c1;
+            } else {
+                node_to_drop = c2;
+            }
+        }
+
+        node_to_drop.node_id().copied()
+    }
 
     pub fn has_branch_lengths(&self) -> bool {
         self.has_branch_lengths
@@ -350,9 +453,9 @@ impl Tree {
     fn print_tree(&self) -> String {
         let mut rv: String = String::new();
         rv.push_str(&format!(
-            "Tips: {}\nInternal Nodes: {}\nAll Nodes: {}\n{}\nHeight: {:7.5}\nBranch lengths: {}\n\n",
-            self.tip_count_all,
+            "Internal Nodes: {}\nTips: {}\nAll Nodes: {}\n{}\nHeight: {:7.5}\nBranch lengths: {}\n\n",
             self.internal_node_count_all,
+            self.tip_count_all,
             self.node_count_all,
             match self.is_rooted() {
                 true => "Rooted",
@@ -372,7 +475,7 @@ impl Tree {
     fn print_node(&self, node: &Node, _level: usize) -> String {
         let mut rv: String = String::new();
         rv.push_str(&format!(
-            "{}- {} | {} | {} | {}\n",
+            "{}- {} | {} | {:<5.3} | {}\n",
             " ".repeat(_level * 4),
             if let Some(node_id) = node.node_id() {
                 node_id.to_string()

@@ -6,6 +6,7 @@
 //         unused_variables,
 //         unused_assignments,
 //         unused_mut,
+//         clippy::needless_return,
 //         clippy::collapsible_if,
 //         clippy::collapsible_match,
 //         clippy::derivable_impls,

@@ -14,6 +14,8 @@ fn main() {
 
     tree.sort(true);
 
+    tree.unroot();
+
     assert!(tree.validate().is_ok());
 
     let first_node_id = tree.first_node_id().unwrap();
