@@ -284,9 +284,13 @@ impl Tree {
 
         let mut has_branch_lengths: bool = false;
 
+        let mut unset_node_ids: Vec<NodeId> = Vec::new();
         for node in self.nodes.values_mut() {
             match node.set_node_type() {
-                NodeType::Unset => count_of_unset += 1,
+                NodeType::Unset => {
+                    unset_node_ids.push(*node.node_id().unwrap());
+                    count_of_unset += 1
+                }
                 NodeType::Tip => count_of_tip += 1,
                 NodeType::Internal => count_of_internal += 1,
                 NodeType::FirstNode => {
@@ -309,6 +313,13 @@ impl Tree {
                     None => has_branch_lengths = false,
                 }
             }
+        }
+
+        for node_id in unset_node_ids {
+            let node = self.node(Some(node_id));
+            let children = self.children(node_id);
+            println!("-- PARENT:\n{node:#?}");
+            println!("-- CHILDREN:\n{children:#?}")
         }
 
         if count_of_first + count_of_root != 1 {
