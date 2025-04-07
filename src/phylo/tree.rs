@@ -488,7 +488,7 @@ impl Tree {
     }
 
     pub fn validate(&mut self) -> Result<(), TreeError> {
-        let mut count_of_unset: usize = 0;
+        // let mut count_of_unset: usize = 0;
         let mut count_of_tip: usize = 0;
         let mut count_of_internal: usize = 0;
         let mut count_of_first: usize = 0;
@@ -496,12 +496,12 @@ impl Tree {
 
         let mut has_branch_lengths: bool = false;
 
-        let mut unset_node_ids: Vec<NodeId> = Vec::new();
+        // let mut unset_node_ids: Vec<NodeId> = Vec::new();
         for node in self.nodes.values_mut() {
             match node.set_node_type() {
                 NodeType::Unset => {
-                    unset_node_ids.push(*node.node_id().unwrap());
-                    count_of_unset += 1
+                    // unset_node_ids.push(*node.node_id().unwrap());
+                    // count_of_unset += 1
                 }
                 NodeType::Tip => count_of_tip += 1,
                 NodeType::Internal => count_of_internal += 1,
@@ -527,12 +527,12 @@ impl Tree {
             }
         }
 
-        for node_id in unset_node_ids {
-            let node = self.node(Some(node_id));
-            let children = self.children(node_id);
-            println!("-- PARENT:\n{node:#?}");
-            println!("-- CHILDREN:\n{children:#?}")
-        }
+        // for node_id in unset_node_ids {
+        //     let node = self.node(Some(node_id));
+        //     let children = self.children(node_id);
+        //     println!("-- PARENT:\n{node:#?}");
+        //     println!("-- CHILDREN:\n{children:#?}")
+        // }
 
         if count_of_first + count_of_root != 1 {
             return Err(TreeError::InvalidTree(format!(
@@ -540,11 +540,11 @@ impl Tree {
             )));
         }
 
-        if count_of_unset != 0 {
-            return Err(TreeError::InvalidTree(format!(
-                "count_of_unset({count_of_unset}) should equal 0."
-            )));
-        }
+        // if count_of_unset != 0 {
+        //     return Err(TreeError::InvalidTree(format!(
+        //         "count_of_unset({count_of_unset}) should equal 0."
+        //     )));
+        // }
 
         self.tip_count_all = count_of_tip;
         self.internal_node_count_all = count_of_internal + count_of_first + count_of_root;

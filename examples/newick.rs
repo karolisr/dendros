@@ -18,15 +18,11 @@ fn main() {
         None => Tree::new(),
     };
 
-    // let first_node_id = tree.first_node_id().unwrap();
+    tree.sort(false);
 
-    // tree.sort(false);
+    assert!(tree.validate().is_ok());
 
-    // assert!(tree.validate().is_ok());
-
-    // tree.unroot();
-
-    let name = "IX";
+    let name = "III";
     if let Some(node_id) = tree.node_id_by_name(name) {
         println!("Found NodeId for node named \"{name}\": {node_id}");
         tree.root(node_id);
@@ -34,22 +30,24 @@ fn main() {
 
     // tree.unroot();
 
-    // println!(
-    //     "child_count: {first_node_id} {}",
-    //     tree.child_count(first_node_id)
-    // );
-    // println!(
-    //     "child_count_recursive: {first_node_id} {}",
-    //     tree.child_count_recursive(first_node_id)
-    // );
-    // println!(
-    //     "tip_count: {first_node_id} {}",
-    //     tree.tip_count(first_node_id)
-    // );
-    // println!(
-    //     "tip_count_recursive: {first_node_id} {}",
-    //     tree.tip_count_recursive(first_node_id)
-    // );
+    let first_node_id = tree.first_node_id().unwrap();
+
+    println!(
+        "child_count: {first_node_id} {}",
+        tree.child_count(first_node_id)
+    );
+    println!(
+        "child_count_recursive: {first_node_id} {}",
+        tree.child_count_recursive(first_node_id)
+    );
+    println!(
+        "tip_count: {first_node_id} {}",
+        tree.tip_count(first_node_id)
+    );
+    println!(
+        "tip_count_recursive: {first_node_id} {}",
+        tree.tip_count_recursive(first_node_id)
+    );
 
     println!("\n{}", &tree);
 
