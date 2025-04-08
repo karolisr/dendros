@@ -13,6 +13,8 @@ pub struct Edge {
     pub y_prev: Option<TreeFloat>,
     pub y: TreeFloat,
     pub is_tip: bool,
+    pub chunk_idx: usize,
+    pub edge_idx: usize,
 }
 
 pub fn flatten_tree(tree: &Tree, chunk_count: usize) -> Vec<Edges> {
@@ -65,6 +67,8 @@ fn flatten(
         y_prev: None,
         y,
         is_tip,
+        chunk_idx: 0,
+        edge_idx: 0,
     };
 
     edges.push(this_edge);
@@ -106,6 +110,7 @@ fn calc_verticals(mut edges: Edges) -> Edges {
                     Some(&y) => y,
                     None => 0e0,
                 };
+
                 e.y = y;
             }
             if y > y_max {
