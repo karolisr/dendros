@@ -1,4 +1,4 @@
-use dendros::{Tree, flatten_tree, parse_newick};
+use dendros::{Tree, flatten_tree, parse_newick, write_newick};
 
 fn main() {
     // let data = "(((пять:0.5,Four:0.4,(Two:0.2,One:0.1)Three:0.3)Six:0.6,Seven:0.7)Aštuoni:0.8,九つ:0.9)十:1.0;";
@@ -9,6 +9,8 @@ fn main() {
     // let data = "((1:0.1,2:0.2)A:0.1,(3:0.3,4:0.4)B:0.1)root:0.0;";
     // let data = "((1:0.1,2:0.2)A:0.1,3:0.3)root:0.0;";
     // let data = "(,(,I));";
+    // let data = "(((Ralpest,Rbuceph,Rpictus)Polygonaceae,(Lspecta,Ltetrag)Plumbaginaceae)PP,(Dadelae,Dbinata)Droseraceae)Caryophyllales;";
+    // let data = "((Lspecta,Ltetrag)Plumbaginaceae,((Dadelae,Dbinata)Droseraceae,(Ralpest,Rbuceph,Rpictus)Polygonaceae)PP);";
 
     let data = String::from(data);
     println!("{data}");
@@ -22,32 +24,34 @@ fn main() {
 
     assert!(tree.validate().is_ok());
 
-    let name = "III";
+    let name = "Plumbaginaceae";
     if let Some(node_id) = tree.node_id_by_name(name) {
         println!("Found NodeId for node named \"{name}\": {node_id}");
-        tree.root(node_id);
+        // tree.root(node_id);
     }
+
+    write_newick(&tree);
 
     // tree.unroot();
 
     let first_node_id = tree.first_node_id().unwrap();
 
-    println!(
-        "child_count: {first_node_id} {}",
-        tree.child_count(first_node_id)
-    );
-    println!(
-        "child_count_recursive: {first_node_id} {}",
-        tree.child_count_recursive(first_node_id)
-    );
-    println!(
-        "tip_count: {first_node_id} {}",
-        tree.tip_count(first_node_id)
-    );
-    println!(
-        "tip_count_recursive: {first_node_id} {}",
-        tree.tip_count_recursive(first_node_id)
-    );
+    // println!(
+    //     "child_count: {first_node_id} {}",
+    //     tree.child_count(first_node_id)
+    // );
+    // println!(
+    //     "child_count_recursive: {first_node_id} {}",
+    //     tree.child_count_recursive(first_node_id)
+    // );
+    // println!(
+    //     "tip_count: {first_node_id} {}",
+    //     tree.tip_count(first_node_id)
+    // );
+    // println!(
+    //     "tip_count_recursive: {first_node_id} {}",
+    //     tree.tip_count_recursive(first_node_id)
+    // );
 
     println!("\n{}", &tree);
 

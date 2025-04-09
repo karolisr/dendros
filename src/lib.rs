@@ -18,5 +18,5 @@
 mod newick;
 mod phylo;
 
-pub use newick::parse_newick;
+pub use newick::{parse_newick, write_newick};
 pub use phylo::{Edge, Edges, Node, NodeId, NodeType, Tree, TreeFloat, flatten_tree};

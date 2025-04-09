@@ -1,5 +1,37 @@
 use crate::{Node, NodeId, Tree, TreeFloat};
 
+pub fn write_newick(tree: &Tree) -> String {
+    if let Some(fnid) = tree.first_node_id() {
+        let children = tree.children(fnid);
+        let mut s = write(children, tree);
+
+        if let Some(fn_name) = tree.name(fnid) {
+            s = format!("({s}){};", fn_name.as_ref());
+        } else {
+            s = format!("({s});");
+        }
+        s = s.replace(",)", ")");
+        // println!("{s}");
+        s
+    } else {
+        String::new()
+    }
+}
+
+pub fn write(nodes: Vec<&Node>, tree: &Tree) -> String {
+    let mut s: String = String::new();
+    for child in nodes {
+        if let Some(&cid) = child.node_id() {
+            let children = tree.children(cid);
+            if !children.is_empty() {
+                s.push_str(&format!("({})", &write(children, tree)));
+            }
+        }
+        s.push_str(&format!("{}:{},", child.name().as_deref().unwrap_or(""), child.branch_length().unwrap_or(1.0)));
+    }
+    s
+}
+
 pub fn parse_newick(s: String) -> Option<Tree> {
     let mut tree: Tree = Tree::default();
     let sc = clean_newick_str(&s);
