@@ -26,19 +26,25 @@ pub enum TreeError {
 }
 
 impl Tree {
-    pub fn root(&mut self, node_id: NodeId) -> Result<NodeId, TreeError> {
+    pub fn can_root(&self, node_id: NodeId) -> bool {
         if let Some(first_node_id) = self.first_node_id {
             if node_id == first_node_id {
-                return Err(TreeError::InvalidOutgroupNode(node_id));
+                return false;
             }
             if self.is_rooted() {
                 let bad_outgroups = self.child_ids(first_node_id);
                 if bad_outgroups.contains(&node_id) {
-                    return Err(TreeError::InvalidOutgroupNode(node_id));
+                    return false;
                 }
             }
         }
+        true
+    }
 
+    pub fn root(&mut self, node_id: NodeId) -> Result<NodeId, TreeError> {
+        if !self.can_root(node_id) {
+            return Err(TreeError::InvalidOutgroupNode(node_id));
+        }
         let yanked_node = self.unroot();
         if let Some(left_id) = self.first_node_id {
             let new_root_id = self
