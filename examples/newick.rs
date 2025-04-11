@@ -30,16 +30,18 @@ fn main() {
     assert!(tree.validate().is_ok());
 
     let newick_string = write_newick(&tree);
-
     println!("{newick_string}");
 
-    // let name = "Plumbaginaceae";
-    // if let Some(node_id) = tree.node_id_by_name(name) {
-    //     println!("Found NodeId for node named \"{name}\": {node_id}");
-    //     tree.root(node_id);
-    // }
+    let name = "VI";
+    if let Some(node_id) = tree.node_id_by_name(name) {
+        println!("Found NodeId for node named \"{name}\": {node_id}");
+        let _ = tree.root(node_id);
+    }
+
+    // tree.sort(false);
 
     // let newick_string = write_newick(&tree);
+    // println!("{newick_string}");
     // let tree = match parse_newick(newick_string) {
     //     Some(t) => t,
     //     None => Tree::new(),

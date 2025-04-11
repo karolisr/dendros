@@ -15,7 +15,7 @@ fn main() {
     tree.sort(true);
 
     tree.unroot();
-    tree.root(tip_1_id.unwrap());
+    let _ = tree.root(tip_1_id.unwrap());
 
     assert!(tree.validate().is_ok());
 
