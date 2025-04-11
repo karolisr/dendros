@@ -21,10 +21,24 @@ pub enum TreeError {
     ParentNodeDoesNotExist(NodeId),
     #[error("Tree validation failed: {0}.")]
     InvalidTree(String),
+    #[error("Cannot use this node as outgroup: {0}.")]
+    InvalidOutgroupNode(NodeId),
 }
 
 impl Tree {
-    pub fn root(&mut self, node_id: NodeId) -> Option<NodeId> {
+    pub fn root(&mut self, node_id: NodeId) -> Result<NodeId, TreeError> {
+        if let Some(first_node_id) = self.first_node_id {
+            if node_id == first_node_id {
+                return Err(TreeError::InvalidOutgroupNode(node_id));
+            }
+            if self.is_rooted() {
+                let bad_outgroups = self.child_ids(first_node_id);
+                if bad_outgroups.contains(&node_id) {
+                    return Err(TreeError::InvalidOutgroupNode(node_id));
+                }
+            }
+        }
+
         let yanked_node = self.unroot();
         if let Some(left_id) = self.first_node_id {
             let new_root_id = self
@@ -85,7 +99,6 @@ impl Tree {
             };
 
             let tmp_chld_ids = self.child_ids(left_id).to_vec();
-
             for id in tmp_chld_ids {
                 if id != id_to_ignore {
                     // let brl_last = self.branch_length(id).unwrap_or_default();
@@ -96,8 +109,7 @@ impl Tree {
             }
             self.nodes.remove(left_id);
         }
-        let _ = self.validate();
-        self.first_node_id
+        self.validate()
     }
 
     pub fn path(&self, right_id: NodeId, left_id: NodeId) -> Vec<NodeId> {
@@ -487,7 +499,7 @@ impl Tree {
         false
     }
 
-    pub fn validate(&mut self) -> Result<(), TreeError> {
+    pub fn validate(&mut self) -> Result<NodeId, TreeError> {
         // let mut count_of_unset: usize = 0;
         let mut count_of_tip: usize = 0;
         let mut count_of_internal: usize = 0;
@@ -556,7 +568,7 @@ impl Tree {
             node.set_branch_length(None);
         }
 
-        Ok(())
+        Ok(self.first_node_id.unwrap())
     }
 
     fn print_tree(&self) -> String {
