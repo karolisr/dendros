@@ -1,41 +1,47 @@
 use crate::{Node, NodeId, Tree, TreeFloat};
 
 pub fn write_newick(tree: &Tree) -> String {
-    if let Some(fnid) = tree.first_node_id() {
-        let children = tree.children(fnid);
-        let mut s = write(children, tree);
-
-        if let Some(fn_name) = tree.name(fnid) {
-            s = format!("({s}){};", fn_name.as_ref());
+    if let Some(first_node_id) = tree.first_node_id() {
+        let children = tree.children(first_node_id);
+        let mut newick = _wite_newick(children, tree);
+        if let Some(name) = tree.name(first_node_id) {
+            newick = format!("({newick}){};", name);
         } else {
-            s = format!("({s});");
+            newick = format!("({newick});");
         }
-        s = s.replace(",)", ")");
-        // println!("{s}");
-        s
+        newick.replace(",)", ")")
     } else {
         String::new()
     }
 }
 
-pub fn write(nodes: Vec<&Node>, tree: &Tree) -> String {
-    let mut s: String = String::new();
-    for child in nodes {
-        if let Some(&cid) = child.node_id() {
-            let children = tree.children(cid);
+fn _wite_newick(child_nodes: Vec<&Node>, tree: &Tree) -> String {
+    let mut newick: String = String::new();
+    for child in child_nodes {
+        if let Some(&child_id) = child.node_id() {
+            let children = tree.children(child_id);
             if !children.is_empty() {
-                s.push_str(&format!("({})", &write(children, tree)));
+                newick.push_str(&format!("({})", &_wite_newick(children, tree)));
             }
         }
-        s.push_str(&format!("{}:{},", child.name().as_deref().unwrap_or(""), child.branch_length().unwrap_or(1.0)));
+
+        if let Some(name) = child.name() {
+            newick.push_str(&name);
+        }
+
+        if let Some(brlen) = child.branch_length() {
+            newick.push_str(&format!(":{}", brlen));
+        }
+
+        newick.push(',');
     }
-    s
+    newick
 }
 
 pub fn parse_newick(s: String) -> Option<Tree> {
     let mut tree: Tree = Tree::default();
     let sc = clean_newick_str(&s);
-    tree = parse(sc, None, tree);
+    tree = _parse_newick(sc, None, tree);
     match tree.validate() {
         Ok(_) => Some(tree),
         Err(err) => {
@@ -45,7 +51,7 @@ pub fn parse_newick(s: String) -> Option<Tree> {
     }
 }
 
-fn parse(s: String, parent_id: Option<NodeId>, mut tree: Tree) -> Tree {
+fn _parse_newick(s: String, parent_id: Option<NodeId>, mut tree: Tree) -> Tree {
     let mut i: usize = 0;
     let mut i0: usize = 0;
     let mut n_open: i32 = 0;
@@ -83,7 +89,7 @@ fn parse(s: String, parent_id: Option<NodeId>, mut tree: Tree) -> Tree {
                         None => &s[i + 1..],
                     };
                     let child_id = tree.add_node(node(label), parent_id).ok();
-                    tree = parse(s[i0..i].into(), child_id, tree);
+                    tree = _parse_newick(s[i0..i].into(), child_id, tree);
                     i += label.len();
                     i0 = i;
                 }
