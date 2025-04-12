@@ -1,4 +1,8 @@
-use dendros::{Tree, flatten_tree, parse_newick, write_newick};
+use dendros::Tree;
+use dendros::flatten_tree;
+use dendros::parse_newick;
+use dendros::write_newick;
+// use std::fs::read_to_string;
 
 fn main() {
     // let data = "(((пять:0.5,Four:0.4,(Two:0.2,One:0.1)Three:0.3)Six:0.6,Seven:0.7)Aštuoni:0.8,九つ:0.9)十:1.0;";
@@ -15,8 +19,9 @@ fn main() {
     // let data = "((3,4)2,1);";
     // let data = "(((Ralpest,Rbuceph,Rpictus)Polygonaceae,(Lspecta,Ltetrag)Plumbaginaceae)PP,(Dadelae,Dbinata)Droseraceae)Caryophyllales;";
     // let data = "((Lspecta,Ltetrag)Plumbaginaceae,((Dadelae,Dbinata)Droseraceae,(Ralpest,Rbuceph,Rpictus)Polygonaceae)PP);";
-
+    // let data = "(1,2,3,4,5);";
     let data = String::from(data);
+    // let data = read_to_string("tests/data/tree01.newick").unwrap();
 
     println!("{data}");
 
@@ -32,22 +37,26 @@ fn main() {
     let newick_string = write_newick(&tree);
     println!("{newick_string}");
 
-    let name = "VI";
+    let name = "IX";
     if let Some(node_id) = tree.node_id_by_name(name) {
-        println!("Found NodeId for node named \"{name}\": {node_id}");
-        let _ = tree.root(node_id);
+        let rslt = tree.root(node_id);
+        match rslt {
+            Ok(outgroup) => println!("Rooted with outgroup: \"{name}\" ({outgroup})"),
+            Err(err) => println!("Rooting error: {err}"),
+        }
     }
 
-    // tree.sort(false);
+    tree.sort(false);
 
-    // let newick_string = write_newick(&tree);
-    // println!("{newick_string}");
-    // let tree = match parse_newick(newick_string) {
-    //     Some(t) => t,
-    //     None => Tree::new(),
-    // };
+    let newick_string = write_newick(&tree);
+    println!("{newick_string}");
+    let mut tree = match parse_newick(newick_string) {
+        Some(t) => t,
+        None => Tree::new(),
+    };
 
     // tree.unroot();
+    tree.sort(false);
 
     // let first_node_id = tree.first_node_id().unwrap();
 
@@ -72,15 +81,15 @@ fn main() {
 
     let chunks = flatten_tree(&tree, 1);
     for chunk in chunks {
-        println!("{}", "-".repeat(96));
+        println!("{}", "-".repeat(80));
         for e in chunk {
             println!(
-                "{:>10} {:>10} {:<5} {:<20} {:>.4} {:>.4} {:>.4} {}",
-                match e.parent {
-                    Some(p) => format!("{:>.4}", p),
+                "{:>8} {:>8} {:<5} {:<28} {:>.4} {:>.4} {:>.4} {}",
+                match e.parent_node_id {
+                    Some(p) => format!("{}", p),
                     None => format!("{:<}", "-"),
                 },
-                format!("{:>.4}", e.child),
+                format!("{}", e.node_id),
                 e.is_tip,
                 match e.name {
                     Some(name) => name,
@@ -89,7 +98,7 @@ fn main() {
                 e.x0,
                 e.x1,
                 e.y,
-                match e.y_prev {
+                match e.y_parent {
                     Some(y_prev) => format!("{:>.4}", y_prev),
                     None => format!("{:<}", "-"),
                 },

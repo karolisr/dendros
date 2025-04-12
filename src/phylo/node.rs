@@ -142,13 +142,8 @@ impl<'a> From<&'a str> for Node {
 
 impl Display for NodeId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            format!("{:?}", self)
-                .trim_start_matches("NodeId(")
-                .trim_end_matches(")")
-        )
+        let disp = format!("{:?}", self);
+        write!(f, "{}", &disp[7..disp.len() - 1])
     }
 }
 

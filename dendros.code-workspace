@@ -41,7 +41,7 @@
         },
         "editor.wordWrap": "off",
         "editor.formatOnPaste": true,
-        "editor.minimap.autohide": true
+        "editor.minimap.autohide": false
     },
     "extensions": {
         "recommendations": []

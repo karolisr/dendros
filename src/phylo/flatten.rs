@@ -1,16 +1,16 @@
 use super::{NodeId, Tree, TreeFloat};
-use std::{collections::BTreeMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 
 pub type Edges = Vec<Edge>;
 
 #[derive(Clone, Debug, Default, PartialEq, PartialOrd)]
 pub struct Edge {
-    pub parent: Option<NodeId>,
-    pub child: NodeId,
+    pub parent_node_id: Option<NodeId>,
+    pub node_id: NodeId,
     pub name: Option<Arc<str>>,
     pub x0: TreeFloat,
     pub x1: TreeFloat,
-    pub y_prev: Option<TreeFloat>,
+    pub y_parent: Option<TreeFloat>,
     pub y: TreeFloat,
     pub is_tip: bool,
     pub chunk_idx: usize,
@@ -22,7 +22,8 @@ pub fn flatten_tree(tree: &Tree, chunk_count: usize) -> Vec<Edges> {
     let tree_height = tree.height();
     let mut tip_id_counter = ntip;
     if let Some(id) = tree.first_node_id() {
-        let mut edges: Edges = flatten(id, None, 0e0, tree, tree_height, ntip, &mut tip_id_counter);
+        let (mut edges, _) =
+            _flatten_tree(id, None, 0e0, tree, tree_height, ntip, &mut tip_id_counter);
         edges = calc_verticals(edges);
         edges.sort_by(|a, b| a.y.total_cmp(&b.y));
         chunk_edges(edges, chunk_count)
@@ -31,7 +32,7 @@ pub fn flatten_tree(tree: &Tree, chunk_count: usize) -> Vec<Edges> {
     }
 }
 
-fn flatten(
+fn _flatten_tree(
     node_id: NodeId,
     parent_node_id: Option<NodeId>,
     height: TreeFloat,
@@ -39,10 +40,10 @@ fn flatten(
     tree_height: TreeFloat,
     ntip: usize,
     tip_id_counter: &mut usize,
-) -> Edges {
+) -> (Edges, Vec<TreeFloat>) {
     let mut edges: Edges = Vec::new();
     if ntip == 0 {
-        return edges;
+        return (edges, Vec::new());
     }
     let brlen: TreeFloat = tree.branch_length(node_id).unwrap_or(0e0) / tree_height;
     let name: Option<Arc<str>> = tree.name(node_id);
@@ -58,22 +59,9 @@ fn flatten(
         is_tip = true;
     }
 
-    let this_edge: Edge = Edge {
-        parent: parent_node_id,
-        child: node_id,
-        name,
-        x0: height,
-        x1: height + brlen,
-        y_prev: None,
-        y,
-        is_tip,
-        chunk_idx: 0,
-        edge_idx: 0,
-    };
-
-    edges.push(this_edge);
+    let mut ys: Vec<TreeFloat> = Vec::new();
     for &child_node_id in child_node_ids {
-        edges.append(&mut flatten(
+        let (mut child_edges, mut child_ys) = _flatten_tree(
             child_node_id,
             Some(node_id),
             height + brlen,
@@ -81,67 +69,57 @@ fn flatten(
             tree_height,
             ntip,
             tip_id_counter,
-        ));
+        );
+
+        edges.append(&mut child_edges);
+        ys.append(&mut child_ys);
     }
-    edges
+
+    if !y.is_nan() {
+        ys.push(y);
+    } else {
+        let y_min = ys.clone().into_iter().reduce(TreeFloat::min).unwrap();
+        let y_max = ys.clone().into_iter().reduce(TreeFloat::max).unwrap();
+        y = (y_max - y_min) / 2e0 + y_min;
+        ys = vec![y];
+    }
+
+    let this_edge: Edge = Edge {
+        parent_node_id,
+        node_id,
+        name,
+        x0: height,
+        x1: height + brlen,
+        y_parent: None,
+        y,
+        is_tip,
+        chunk_idx: 0,
+        edge_idx: 0,
+    };
+
+    edges.push(this_edge);
+
+    (edges, ys)
 }
 
 fn calc_verticals(mut edges: Edges) -> Edges {
-    if edges.is_empty() {
-        return edges;
-    }
+    let mut p_ys: HashMap<NodeId, TreeFloat> = HashMap::new();
 
-    edges.sort_by(|a, b| a.child.cmp(&b.child));
-    edges.sort_by(|b, a| a.parent.cmp(&b.parent));
-
-    let mut mem: BTreeMap<NodeId, TreeFloat> = BTreeMap::new();
-    let mut parent_prev = edges[0].parent;
-    let mut y_min = edges[0].y;
-    let mut y_max = edges[0].y;
-    let mut y_prev = edges[0].y;
-    for e in &mut edges[1..] {
-        let parent = e.parent;
-        let child = e.child;
-        let mut y = e.y;
-        if parent == parent_prev {
-            if y.is_nan() {
-                y = match mem.get(&child) {
-                    Some(&y) => y,
-                    None => 0e0,
-                };
-
-                e.y = y;
-            }
-            if y > y_max {
-                y_max = y;
-            }
-            if y < y_min {
-                y_min = y;
-            }
-            e.y_prev = Some(y_prev);
-        } else {
-            let y_parent = (y_max - y_min) / 2e0 + y_min;
-
-            if let Some(pp) = parent_prev {
-                if child == pp {
-                    if let Some(p) = parent {
-                        mem.insert(p, y_parent);
-                    }
-                } else {
-                    mem.insert(pp, y_parent);
-                }
-            }
-
-            if y.is_nan() {
-                y = y_parent;
-                e.y = y_parent;
-            }
-            y_min = y;
-            y_max = y;
-            parent_prev = parent;
+    for e in &edges {
+        if !e.is_tip {
+            p_ys.insert(e.node_id, e.y);
         }
-        y_prev = y;
     }
+
+    for e in &mut edges {
+        if let Some(p) = e.parent_node_id {
+            let p_y = p_ys[&p];
+            if p_y != e.y {
+                e.y_parent = Some(p_y);
+            }
+        }
+    }
+
     edges
 }
 
@@ -154,17 +132,17 @@ fn chunk_edges(edges: Edges, chunk_count: usize) -> Vec<Edges> {
     if chunk_count == 0 {
         chunk_count = 1;
     }
-    let n_edge_per_thread = edge_count / chunk_count;
+    let edge_count_per_chunk = edge_count / chunk_count;
     let remainder = edge_count % chunk_count;
     let mut chunks: Vec<Vec<Edge>> = Vec::new();
     for t in 0..chunk_count {
-        let i1 = n_edge_per_thread * t;
-        let i2 = n_edge_per_thread * (t + 1);
+        let i1 = edge_count_per_chunk * t;
+        let i2 = edge_count_per_chunk * (t + 1);
         let edges = &edges[i1..i2];
         chunks.push(edges.to_vec());
     }
     if remainder > 0 {
-        let edges = &edges[n_edge_per_thread * chunk_count..];
+        let edges = &edges[edge_count_per_chunk * chunk_count..];
         chunks.push(edges.to_vec());
     }
     chunks
