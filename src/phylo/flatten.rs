@@ -8,6 +8,8 @@ pub struct Edge {
     pub parent_node_id: Option<NodeId>,
     pub node_id: NodeId,
     pub name: Option<Arc<str>>,
+    pub brlen: TreeFloat,
+    pub brlen_normalized: TreeFloat,
     pub x0: TreeFloat,
     pub x1: TreeFloat,
     pub y_parent: Option<TreeFloat>,
@@ -35,7 +37,7 @@ pub fn flatten_tree(tree: &Tree, chunk_count: usize) -> Vec<Edges> {
 fn _flatten_tree(
     node_id: NodeId,
     parent_node_id: Option<NodeId>,
-    height: TreeFloat,
+    node_height: TreeFloat,
     tree: &Tree,
     tree_height: TreeFloat,
     ntip: usize,
@@ -45,7 +47,8 @@ fn _flatten_tree(
     if ntip == 0 {
         return (edges, Vec::new());
     }
-    let brlen: TreeFloat = tree.branch_length(node_id).unwrap_or(0e0) / tree_height;
+    let brlen: TreeFloat = tree.branch_length(node_id).unwrap_or(0e0);
+    let brlen_normalized: TreeFloat = brlen / tree_height;
     let name: Option<Arc<str>> = tree.name(node_id);
     let child_node_ids: &[NodeId] = tree.child_ids(node_id);
     let descending_tip_count: usize = tree.tip_count_recursive(node_id);
@@ -64,7 +67,7 @@ fn _flatten_tree(
         let (mut child_edges, mut child_ys) = _flatten_tree(
             child_node_id,
             Some(node_id),
-            height + brlen,
+            node_height + brlen_normalized,
             tree,
             tree_height,
             ntip,
@@ -88,8 +91,10 @@ fn _flatten_tree(
         parent_node_id,
         node_id,
         name,
-        x0: height,
-        x1: height + brlen,
+        brlen,
+        brlen_normalized,
+        x0: node_height,
+        x1: node_height + brlen_normalized,
         y_parent: None,
         y,
         is_tip,
@@ -129,7 +134,7 @@ fn chunk_edges(edges: Edges, chunk_count: usize) -> Vec<Edges> {
         return Vec::new();
     }
     let mut chunk_count = chunk_count;
-    if chunk_count == 0 {
+    if chunk_count < 2 {
         chunk_count = 1;
     }
     let edge_count_per_chunk = edge_count / chunk_count;
