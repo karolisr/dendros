@@ -98,11 +98,8 @@ impl Tree {
                 self.nodes[new_last].set_branch_length(Some(prev_brl));
             }
 
-            let id_to_ignore: NodeId = if !path.is_empty() {
-                path[path.len() - 1]
-            } else {
-                node_id
-            };
+            let id_to_ignore: NodeId =
+                if !path.is_empty() { path[path.len() - 1] } else { node_id };
 
             let tmp_chld_ids = self.child_ids(left_id).to_vec();
             for id in tmp_chld_ids {
@@ -140,11 +137,7 @@ impl Tree {
         let name: &str = name.into();
         self.nodes.iter().find_map(|(node_id, node)| {
             if let Some(node_name) = node.name() {
-                if node_name == name.into() {
-                    Some(node_id)
-                } else {
-                    None
-                }
+                if node_name == name.into() { Some(node_id) } else { None }
             } else {
                 None
             }
@@ -278,11 +271,7 @@ impl Tree {
     }
 
     pub fn tip_node_ids_all(&self) -> Vec<NodeId> {
-        if let Some(id) = self.first_node_id {
-            self.tip_node_ids(id)
-        } else {
-            Vec::new()
-        }
+        if let Some(id) = self.first_node_id { self.tip_node_ids(id) } else { Vec::new() }
     }
 
     pub fn height(&self) -> TreeFloat {
@@ -348,11 +337,7 @@ impl Tree {
     pub fn tip_count_recursive(&self, node_id: NodeId) -> usize {
         let mut rv: usize = 0;
         for &child_id in self.child_ids(node_id) {
-            if !self.is_tip(child_id) {
-                rv += self.tip_count_recursive(child_id)
-            } else {
-                rv += 1
-            }
+            if !self.is_tip(child_id) { rv += self.tip_count_recursive(child_id) } else { rv += 1 }
         }
         rv
     }
@@ -475,19 +460,11 @@ impl Tree {
     }
 
     pub fn node(&self, node_id: Option<NodeId>) -> Option<&Node> {
-        if let Some(node_id) = node_id {
-            self.nodes.get(node_id)
-        } else {
-            None
-        }
+        if let Some(node_id) = node_id { self.nodes.get(node_id) } else { None }
     }
 
     pub fn node_mut(&mut self, node_id: Option<NodeId>) -> Option<&mut Node> {
-        if let Some(node_id) = node_id {
-            self.nodes.get_mut(node_id)
-        } else {
-            None
-        }
+        if let Some(node_id) = node_id { self.nodes.get_mut(node_id) } else { None }
     }
 
     pub fn node_exists(&self, node_id: Option<NodeId>) -> bool {
@@ -609,16 +586,8 @@ impl Tree {
             } else {
                 "None".to_string()
             },
-            if let Some(name) = &node.name() {
-                name.to_string()
-            } else {
-                "None".to_string()
-            },
-            if let Some(brlen) = node.branch_length() {
-                brlen
-            } else {
-                TreeFloat::NAN
-            },
+            if let Some(name) = &node.name() { name.to_string() } else { "None".to_string() },
+            if let Some(brlen) = node.branch_length() { brlen } else { TreeFloat::NAN },
             node.node_type()
         ));
 
