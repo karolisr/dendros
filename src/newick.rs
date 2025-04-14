@@ -5,6 +5,7 @@ pub fn write_newick(tree: &Tree) -> String {
         let children = tree.children(first_node_id);
         let mut newick = _wite_newick(children, tree);
         if let Some(name) = tree.name(first_node_id) {
+            let name = name.replace(" ", "_");
             newick = format!("({newick}){};", name);
         } else {
             newick = format!("({newick});");
@@ -26,6 +27,7 @@ fn _wite_newick(child_nodes: Vec<&Node>, tree: &Tree) -> String {
         }
 
         if let Some(name) = child.name() {
+            let name = name.replace(" ", "_");
             newick.push_str(&name);
         }
 
