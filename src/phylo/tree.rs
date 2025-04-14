@@ -26,6 +26,37 @@ pub enum TreeError {
 }
 
 impl Tree {
+    pub fn tip_heights(&self) -> Vec<(NodeId, TreeFloat)> {
+        let mut heights: Vec<(NodeId, TreeFloat)> = Vec::new();
+        if let Some(first_node_id) = self.first_node_id {
+            for n in self.nodes.values() {
+                if n.is_tip() {
+                    if let Some(node_id) = n.node_id() {
+                        heights.push((*node_id, self.dist(first_node_id, *node_id)));
+                    }
+                }
+            }
+        }
+        heights
+    }
+
+    pub fn is_ultrametric(&self, epsilon: TreeFloat) -> Option<bool> {
+        if !self.is_rooted() {
+            return None;
+        }
+        let is_ultrametric = true;
+        let tip_heights = self.tip_heights();
+        let mut prev_tip_height = tip_heights[0].1;
+        for (_node_id, h) in tip_heights {
+            if (prev_tip_height - h).abs() < epsilon {
+                prev_tip_height = h;
+            } else {
+                return Some(false);
+            }
+        }
+        Some(is_ultrametric)
+    }
+
     pub fn can_root(&self, node_id: NodeId) -> bool {
         if let Some(first_node_id) = self.first_node_id {
             if node_id == first_node_id {
