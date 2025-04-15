@@ -26,13 +26,31 @@ pub enum TreeError {
 }
 
 impl Tree {
+    pub fn has_tip_labels(&self) -> bool {
+        for n in self.nodes.values() {
+            if n.is_tip() && n.name().is_some() {
+                return true;
+            }
+        }
+        false
+    }
+
+    pub fn has_int_labels(&self) -> bool {
+        for n in self.nodes.values() {
+            if !n.is_tip() && n.name().is_some() {
+                return true;
+            }
+        }
+        false
+    }
+
     pub fn tip_heights(&self) -> Vec<(NodeId, TreeFloat)> {
         let mut heights: Vec<(NodeId, TreeFloat)> = Vec::new();
         if let Some(first_node_id) = self.first_node_id {
             for n in self.nodes.values() {
                 if n.is_tip() {
-                    if let Some(node_id) = n.node_id() {
-                        heights.push((*node_id, self.dist(first_node_id, *node_id)));
+                    if let Some(&node_id) = n.node_id() {
+                        heights.push((node_id, self.dist(first_node_id, node_id)));
                     }
                 }
             }
