@@ -19,7 +19,7 @@ pub struct Edge {
     pub edge_idx: usize,
 }
 
-pub fn flatten_tree(tree: &Tree, chunk_count: usize) -> Vec<Edges> {
+pub fn flatten_tree(tree: &Tree) -> Edges {
     let ntip = tree.tip_count_all();
     let tree_height = tree.height();
     let mut tip_id_counter = ntip;
@@ -28,7 +28,7 @@ pub fn flatten_tree(tree: &Tree, chunk_count: usize) -> Vec<Edges> {
             _flatten_tree(id, None, 0e0, tree, tree_height, ntip, &mut tip_id_counter);
         edges = calc_verticals(edges);
         edges.sort_by(|a, b| a.y.total_cmp(&b.y));
-        chunk_edges(edges, chunk_count)
+        edges
     } else {
         Vec::new()
     }
@@ -128,7 +128,7 @@ fn calc_verticals(mut edges: Edges) -> Edges {
     edges
 }
 
-fn chunk_edges(edges: Edges, chunk_count: usize) -> Vec<Edges> {
+pub fn chunk_edges(edges: &Edges, chunk_count: usize) -> Vec<Edges> {
     let edge_count = edges.len();
     if edge_count == 0 {
         return Vec::new();

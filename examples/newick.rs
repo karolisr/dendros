@@ -1,4 +1,5 @@
 use dendros::Tree;
+use dendros::chunk_edges;
 use dendros::flatten_tree;
 use dendros::parse_newick;
 use dendros::write_newick;
@@ -79,7 +80,8 @@ fn main() {
 
     println!("\n{}", &tree);
 
-    let chunks = flatten_tree(&tree, 1);
+    let edges = flatten_tree(&tree);
+    let chunks = chunk_edges(&edges, 1);
     for chunk in chunks {
         println!("{}", "-".repeat(80));
         for e in chunk {
