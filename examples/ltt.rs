@@ -1,4 +1,4 @@
-use dendros::Tree;
+// use dendros::Tree;
 use dendros::flatten_tree;
 use dendros::ltt;
 use dendros::parse_newick;
@@ -10,16 +10,15 @@ fn main() {
     // let data = read_to_string("tests/data/tree01.newick").unwrap();
     let data = read_to_string("tests/data/big_seed_plant_trees/ALLOTB.tre").unwrap();
 
-    let mut tree = match parse_newick(data) {
-        Some(t) => t,
-        None => Tree::new(),
-    };
+    let mut trees = parse_newick(data).unwrap_or_default();
+
+    let tree = &mut trees[0];
 
     tree.unroot();
 
     // println!("\n{}", &tree);
 
-    let edges = flatten_tree(&tree);
+    let edges = flatten_tree(tree);
     let points = ltt(&edges, 100);
 
     for pt in points {

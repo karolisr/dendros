@@ -40,17 +40,22 @@ fn _wite_newick(child_nodes: Vec<&Node>, tree: &Tree) -> String {
     newick
 }
 
-pub fn parse_newick(s: String) -> Option<Tree> {
-    let mut tree: Tree = Tree::default();
-    let sc = clean_newick_str(&s);
-    tree = _parse_newick(sc, None, tree);
-    match tree.validate() {
-        Ok(_) => Some(tree),
-        Err(err) => {
-            println!("{err:?}");
-            None
+pub fn parse_newick(s: String) -> Option<Vec<Tree>> {
+    let mut rv: Vec<Tree> = Vec::new();
+    let s_lines = split_multi_newick_str(&s);
+    for s_line in s_lines {
+        let mut tree: Tree = Tree::default();
+        let s_line_clean = clean_newick_str(&s_line);
+        tree = _parse_newick(s_line_clean, None, tree);
+        match tree.validate() {
+            Ok(_) => rv.push(tree),
+            Err(err) => {
+                println!("{err:?}");
+                return None;
+            }
         }
     }
+    Some(rv)
 }
 
 fn _parse_newick(s: String, parent_id: Option<NodeId>, mut tree: Tree) -> Tree {
@@ -191,6 +196,18 @@ fn parse_newick_label<'a>(name: impl Into<&'a str>) -> (Option<String>, Option<T
     };
 
     (name, brln)
+}
+
+fn split_multi_newick_str(s: &str) -> Vec<String> {
+    let mut rv: Vec<String> = Vec::new();
+    let lines = s.lines();
+    for line in lines {
+        let line_trimmed = line.trim();
+        if line_trimmed.ends_with(";") {
+            rv.push(line_trimmed.to_string());
+        }
+    }
+    rv
 }
 
 fn clean_newick_str(s: &str) -> String {
