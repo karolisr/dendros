@@ -50,7 +50,7 @@ impl Tree {
             for n in self.nodes.values() {
                 if n.is_tip() {
                     if let Some(&node_id) = n.node_id() {
-                        heights.push((node_id, self.dist(first_node_id, node_id)));
+                        heights.push((node_id, self.dist(&first_node_id, &node_id)));
                     }
                 }
             }
@@ -75,14 +75,14 @@ impl Tree {
         Some(is_ultrametric)
     }
 
-    pub fn can_root(&self, node_id: NodeId) -> bool {
-        if let Some(first_node_id) = self.first_node_id {
+    pub fn can_root(&self, node_id: &NodeId) -> bool {
+        if let Some(first_node_id) = &self.first_node_id {
             if node_id == first_node_id {
                 return false;
             }
             if self.is_rooted() {
                 let bad_outgroups = self.child_ids(first_node_id);
-                if bad_outgroups.contains(&node_id) {
+                if bad_outgroups.contains(node_id) {
                     return false;
                 }
             }
@@ -91,7 +91,7 @@ impl Tree {
     }
 
     pub fn root(&mut self, node_id: NodeId) -> Result<NodeId, TreeError> {
-        if !self.can_root(node_id) {
+        if !self.can_root(&node_id) {
             return Err(TreeError::InvalidOutgroupNode(node_id));
         }
         let yanked_node = self.unroot();
@@ -101,7 +101,7 @@ impl Tree {
                 .ok()
                 .unwrap();
 
-            let path = self.path(node_id, left_id);
+            let path = self.path(&node_id, &left_id);
             let brl_new_out: TreeFloat = self.branch_length(node_id).unwrap_or_default() / 2e0;
             // println!("{node_id}:{brl_new_out} <- new out");
             if self.has_branch_lengths {
@@ -150,7 +150,7 @@ impl Tree {
             let id_to_ignore: NodeId =
                 if !path.is_empty() { path[path.len() - 1] } else { node_id };
 
-            let tmp_chld_ids = self.child_ids(left_id).to_vec();
+            let tmp_chld_ids = self.child_ids(&left_id).to_vec();
             for id in tmp_chld_ids {
                 if id != id_to_ignore {
                     // let brl_last = self.branch_length(id).unwrap_or_default();
@@ -164,15 +164,15 @@ impl Tree {
         self.validate()
     }
 
-    pub fn path(&self, right_id: NodeId, left_id: NodeId) -> Vec<NodeId> {
+    pub fn path(&self, right_id: &NodeId, left_id: &NodeId) -> Vec<NodeId> {
         let mut rv: Vec<NodeId> = Vec::new();
         if left_id == right_id {
             return rv;
         }
 
-        if let Some(&parent_id) = self.parent_id(right_id) {
+        if let Some(parent_id) = self.parent_id(right_id) {
             if parent_id != left_id {
-                rv.push(parent_id);
+                rv.push(*parent_id);
                 rv.extend(self.path(parent_id, left_id));
             }
         } else {
@@ -198,19 +198,19 @@ impl Tree {
         if let Some(node_to_drop_id) = self.unroot_pick_node_to_drop() {
             self.slide_brlen_through_root(node_to_drop_id);
             yanked_node = self.node(Some(node_to_drop_id)).cloned();
-            self.yank_node(node_to_drop_id);
+            self.yank_node(&node_to_drop_id);
             let _ = self.validate();
         }
         yanked_node
     }
 
-    fn yank_node(&mut self, node_id: NodeId) {
+    fn yank_node(&mut self, node_id: &NodeId) {
         let child_ids = self.child_ids(node_id).to_vec();
-        if let Some(parent_node_id) = self.nodes[node_id].parent_id() {
+        if let Some(parent_node_id) = self.nodes[*node_id].parent_id() {
             let parent_node_id: NodeId = *parent_node_id;
             let parent = self.nodes.get_mut(parent_node_id).unwrap();
 
-            parent.remove_child_id(&node_id);
+            parent.remove_child_id(node_id);
 
             for &child_id in &child_ids {
                 parent.add_child_id(child_id);
@@ -221,7 +221,7 @@ impl Tree {
                 child.set_parent_id(Some(parent_node_id));
             }
 
-            self.nodes.remove(node_id);
+            self.nodes.remove(*node_id);
         }
     }
 
@@ -231,7 +231,7 @@ impl Tree {
         }
 
         let mut receive_node_id: NodeId = source_node_id;
-        for &other_id in self.child_ids(self.first_node_id.unwrap()) {
+        for &other_id in self.child_ids(&self.first_node_id.unwrap()) {
             if other_id != source_node_id {
                 receive_node_id = other_id
             }
@@ -264,7 +264,7 @@ impl Tree {
                 return None;
             }
         }
-        let root_chld = self.children(self.first_node_id.unwrap());
+        let root_chld = self.children(&self.first_node_id.unwrap());
         let c1 = root_chld[0];
         let c2 = root_chld[1];
 
@@ -285,8 +285,8 @@ impl Tree {
         } else {
             // The only possible state at this point is that neither c1 or c2 are tips.
             // Arbitrarily drop the one with more total descending tips.
-            let tcr1 = self.tip_count_recursive(*c1.node_id().unwrap());
-            let tcr2 = self.tip_count_recursive(*c2.node_id().unwrap());
+            let tcr1 = self.tip_count_recursive(c1.node_id().unwrap());
+            let tcr2 = self.tip_count_recursive(c2.node_id().unwrap());
 
             if tcr1 > tcr2 {
                 node_to_drop = c1;
@@ -302,16 +302,16 @@ impl Tree {
         self.has_branch_lengths
     }
 
-    pub fn is_tip(&self, node_id: NodeId) -> bool {
-        self.nodes[node_id].is_tip()
+    pub fn is_tip(&self, node_id: &NodeId) -> bool {
+        self.nodes[*node_id].is_tip()
     }
 
-    pub fn tip_node_ids(&self, node_id: NodeId) -> Vec<NodeId> {
+    pub fn tip_node_ids(&self, node_id: &NodeId) -> Vec<NodeId> {
         let cs: &[NodeId] = self.child_ids(node_id);
         let mut rv: Vec<NodeId> = Vec::new();
-        for &c in cs {
+        for c in cs {
             if self.is_tip(c) {
-                rv.push(c);
+                rv.push(*c);
             } else {
                 rv.append(&mut self.tip_node_ids(c));
             }
@@ -320,13 +320,13 @@ impl Tree {
     }
 
     pub fn tip_node_ids_all(&self) -> Vec<NodeId> {
-        if let Some(id) = self.first_node_id { self.tip_node_ids(id) } else { Vec::new() }
+        if let Some(id) = self.first_node_id { self.tip_node_ids(&id) } else { Vec::new() }
     }
 
     pub fn height(&self) -> TreeFloat {
         let mut h = 0e0;
-        if let Some(id) = self.first_node_id {
-            for right in self.tip_node_ids_all() {
+        if let Some(id) = &self.first_node_id {
+            for right in &self.tip_node_ids_all() {
                 let curr = self.dist(id, right);
                 if curr > h {
                     h = curr
@@ -336,13 +336,13 @@ impl Tree {
         h
     }
 
-    pub fn dist(&self, left: NodeId, right: NodeId) -> TreeFloat {
+    pub fn dist(&self, left: &NodeId, right: &NodeId) -> TreeFloat {
         let mut h: TreeFloat = 0e0;
         if left != right {
-            h += self.branch_length(right).unwrap_or(0e0);
+            h += self.branch_length(*right).unwrap_or(0e0);
         }
         match self.parent_id(right) {
-            Some(&p) => {
+            Some(p) => {
                 if p == left {
                     h
                 } else {
@@ -353,13 +353,13 @@ impl Tree {
         }
     }
 
-    pub fn child_count(&self, node_id: NodeId) -> usize {
-        self.nodes[node_id].child_node_count()
+    pub fn child_count(&self, node_id: &NodeId) -> usize {
+        self.nodes[*node_id].child_node_count()
     }
 
-    pub fn child_count_recursive(&self, node_id: NodeId) -> usize {
+    pub fn child_count_recursive(&self, node_id: &NodeId) -> usize {
         let mut rv: usize = self.child_count(node_id);
-        for &child_id in self.child_ids(node_id) {
+        for child_id in self.child_ids(node_id) {
             rv += self.child_count_recursive(child_id)
         }
         rv
@@ -367,31 +367,31 @@ impl Tree {
 
     pub fn sort(&mut self, reverse: bool) {
         if let Some(id) = self.first_node_id {
-            self.sort_nodes(id, reverse);
+            self.sort_nodes(&id, reverse);
         }
     }
 
-    fn sort_nodes(&mut self, node_id: NodeId, reverse: bool) {
-        let mut sorted_ids: Vec<NodeId> = self.nodes[node_id].child_ids().to_vec();
-        sorted_ids.sort_by_key(|c| self.child_count_recursive(*c));
+    fn sort_nodes(&mut self, node_id: &NodeId, reverse: bool) {
+        let mut sorted_ids: Vec<NodeId> = self.nodes[*node_id].child_ids().to_vec();
+        sorted_ids.sort_by_key(|c| self.child_count_recursive(c));
         if reverse {
             sorted_ids.reverse();
         }
         for &id in &sorted_ids {
-            self.sort_nodes(id, reverse);
+            self.sort_nodes(&id, reverse);
         }
-        self.nodes[node_id].set_child_ids(sorted_ids);
+        self.nodes[*node_id].set_child_ids(sorted_ids);
     }
 
-    pub fn tip_count_recursive(&self, node_id: NodeId) -> usize {
+    pub fn tip_count_recursive(&self, node_id: &NodeId) -> usize {
         let mut rv: usize = 0;
-        for &child_id in self.child_ids(node_id) {
+        for child_id in self.child_ids(node_id) {
             if !self.is_tip(child_id) { rv += self.tip_count_recursive(child_id) } else { rv += 1 }
         }
         rv
     }
 
-    pub fn tip_count(&self, node_id: NodeId) -> usize {
+    pub fn tip_count(&self, node_id: &NodeId) -> usize {
         let mut rv: usize = 0;
         for child_node in self.children(node_id) {
             if child_node.is_tip() {
@@ -408,7 +408,7 @@ impl Tree {
     pub fn branch_length(&self, node_id: NodeId) -> Option<TreeFloat> {
         if self.has_branch_lengths {
             self.nodes[node_id].branch_length()
-        } else if Some(node_id) == self.first_node_id {
+        } else if Some(node_id) == self.first_node_id() {
             None
         } else {
             Some(1e0)
@@ -427,19 +427,19 @@ impl Tree {
         self.node_count_all
     }
 
-    pub fn name(&self, node_id: NodeId) -> Option<Arc<str>> {
-        self.nodes[node_id].name()
+    pub fn name(&self, node_id: &NodeId) -> Option<Arc<str>> {
+        self.nodes[*node_id].name()
     }
 
-    pub fn parent_id(&self, node_id: NodeId) -> Option<&NodeId> {
-        self.nodes[node_id].parent_id()
+    pub fn parent_id(&self, node_id: &NodeId) -> Option<&NodeId> {
+        self.nodes[*node_id].parent_id()
     }
 
-    pub fn child_ids(&self, node_id: NodeId) -> &[NodeId] {
-        self.nodes[node_id].child_ids()
+    pub fn child_ids(&self, node_id: &NodeId) -> &[NodeId] {
+        self.nodes[*node_id].child_ids()
     }
 
-    pub fn children(&self, node_id: NodeId) -> Vec<&Node> {
+    pub fn children(&self, node_id: &NodeId) -> Vec<&Node> {
         let mut rv = Vec::new();
         for &child_id in self.child_ids(node_id) {
             let child_node = &self.nodes[child_id];

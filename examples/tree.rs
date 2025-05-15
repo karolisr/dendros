@@ -19,7 +19,7 @@ fn main() {
 
     assert!(tree.validate().is_ok());
 
-    let first_node_id = tree.first_node_id().unwrap();
+    let first_node_id = &tree.first_node_id().unwrap();
 
     println!(
         "child_count: {first_node_id} {}",
