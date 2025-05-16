@@ -11,12 +11,13 @@ pub struct Edge {
     pub brlen: TreeFloat,
     pub brlen_normalized: TreeFloat,
     pub x0: TreeFloat,
+    pub x_mid: TreeFloat,
     pub x1: TreeFloat,
     pub y_parent: Option<TreeFloat>,
     pub y: TreeFloat,
     pub is_tip: bool,
-    pub chunk_idx: usize,
     pub edge_idx: usize,
+    // pub chunk_idx: usize,
 }
 
 pub fn flatten_tree(tree: &Tree) -> Edges {
@@ -37,7 +38,7 @@ pub fn flatten_tree(tree: &Tree) -> Edges {
 fn _flatten_tree(
     node_id: &NodeId,
     parent_node_id: Option<NodeId>,
-    node_height: TreeFloat,
+    parent_height: TreeFloat,
     tree: &Tree,
     tree_height: TreeFloat,
     ntip: usize,
@@ -62,12 +63,15 @@ fn _flatten_tree(
         is_tip = true;
     }
 
+    let node_height = parent_height + brlen_normalized;
+    let x_mid = parent_height + brlen_normalized / 2e0;
+
     let mut ys: Vec<TreeFloat> = Vec::new();
     for child_node_id in child_node_ids {
         let (mut child_edges, mut child_ys) = _flatten_tree(
             child_node_id,
             Some(*node_id),
-            node_height + brlen_normalized,
+            node_height,
             tree,
             tree_height,
             ntip,
@@ -93,13 +97,14 @@ fn _flatten_tree(
         name,
         brlen,
         brlen_normalized,
-        x0: node_height,
-        x1: node_height + brlen_normalized,
+        x0: parent_height,
+        x_mid,
+        x1: node_height,
         y_parent: None,
         y,
         is_tip,
-        chunk_idx: 0,
         edge_idx: 0,
+        // chunk_idx: 0,
     };
 
     edges.push(this_edge);
@@ -128,27 +133,27 @@ fn calc_verticals(mut edges: Edges) -> Edges {
     edges
 }
 
-pub fn chunk_edges(edges: &Edges, chunk_count: usize) -> Vec<Edges> {
-    let edge_count = edges.len();
-    if edge_count == 0 {
-        return Vec::new();
-    }
-    let mut chunk_count = chunk_count;
-    if chunk_count < 2 {
-        chunk_count = 1;
-    }
-    let edge_count_per_chunk = edge_count / chunk_count;
-    let remainder = edge_count % chunk_count;
-    let mut chunks: Vec<Vec<Edge>> = Vec::new();
-    for t in 0..chunk_count {
-        let i1 = edge_count_per_chunk * t;
-        let i2 = edge_count_per_chunk * (t + 1);
-        let edges = &edges[i1..i2];
-        chunks.push(edges.to_vec());
-    }
-    if remainder > 0 {
-        let edges = &edges[edge_count_per_chunk * chunk_count..];
-        chunks.push(edges.to_vec());
-    }
-    chunks
-}
+// pub fn chunk_edges(edges: &Edges, chunk_count: usize) -> Vec<Edges> {
+//     let edge_count = edges.len();
+//     if edge_count == 0 {
+//         return Vec::new();
+//     }
+//     let mut chunk_count = chunk_count;
+//     if chunk_count < 2 {
+//         chunk_count = 1;
+//     }
+//     let edge_count_per_chunk = edge_count / chunk_count;
+//     let remainder = edge_count % chunk_count;
+//     let mut chunks: Vec<Vec<Edge>> = Vec::new();
+//     for t in 0..chunk_count {
+//         let i1 = edge_count_per_chunk * t;
+//         let i2 = edge_count_per_chunk * (t + 1);
+//         let edges = &edges[i1..i2];
+//         chunks.push(edges.to_vec());
+//     }
+//     if remainder > 0 {
+//         let edges = &edges[edge_count_per_chunk * chunk_count..];
+//         chunks.push(edges.to_vec());
+//     }
+//     chunks
+// }
