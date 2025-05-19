@@ -1,5 +1,6 @@
 use super::TreeFloat;
 use super::node::{Node, NodeId, NodeType};
+use rayon::prelude::*;
 use slotmap::SlotMap;
 use std::fmt::Display;
 use std::sync::Arc;
@@ -373,7 +374,7 @@ impl Tree {
 
     fn sort_nodes(&mut self, node_id: &NodeId, reverse: bool) {
         let mut sorted_ids: Vec<NodeId> = self.nodes[*node_id].child_ids().to_vec();
-        sorted_ids.sort_by_key(|c| self.child_count_recursive(c));
+        sorted_ids.par_sort_by_key(|c| self.child_count_recursive(c));
         if reverse {
             sorted_ids.reverse();
         }

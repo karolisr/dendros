@@ -1,7 +1,6 @@
 use super::{NodeId, Tree, TreeFloat};
+use rayon::prelude::*;
 use std::{collections::HashMap, sync::Arc};
-
-pub type Edges = Vec<Edge>;
 
 #[derive(Clone, Debug, Default, PartialEq, PartialOrd)]
 pub struct Edge {
@@ -17,10 +16,9 @@ pub struct Edge {
     pub y: TreeFloat,
     pub is_tip: bool,
     pub edge_idx: usize,
-    // pub chunk_idx: usize,
 }
 
-pub fn flatten_tree(tree: &Tree) -> Edges {
+pub fn flatten_tree(tree: &Tree) -> Vec<Edge> {
     let ntip = tree.tip_count_all();
     let tree_height = tree.height();
     let mut tip_id_counter = ntip;
@@ -28,7 +26,7 @@ pub fn flatten_tree(tree: &Tree) -> Edges {
         let (mut edges, _) =
             _flatten_tree(id, None, 0e0, tree, tree_height, ntip, &mut tip_id_counter);
         edges = calc_verticals(edges);
-        edges.sort_by(|a, b| a.y.total_cmp(&b.y));
+        edges.par_sort_by(|a, b| a.y.total_cmp(&b.y));
         edges
     } else {
         Vec::new()
@@ -43,8 +41,8 @@ fn _flatten_tree(
     tree_height: TreeFloat,
     ntip: usize,
     tip_id_counter: &mut usize,
-) -> (Edges, Vec<TreeFloat>) {
-    let mut edges: Edges = Vec::new();
+) -> (Vec<Edge>, Vec<TreeFloat>) {
+    let mut edges: Vec<Edge> = Vec::new();
     if ntip == 0 {
         return (edges, Vec::new());
     }
@@ -64,7 +62,7 @@ fn _flatten_tree(
     }
 
     let node_height = parent_height + brlen_normalized;
-    let x_mid = parent_height + brlen_normalized / 2e0;
+    let x_mid = parent_height.midpoint(node_height);
 
     let mut ys: Vec<TreeFloat> = Vec::new();
     for child_node_id in child_node_ids {
@@ -87,7 +85,7 @@ fn _flatten_tree(
     } else {
         let y_min = ys.clone().into_iter().reduce(TreeFloat::min).unwrap();
         let y_max = ys.clone().into_iter().reduce(TreeFloat::max).unwrap();
-        y = (y_max - y_min) / 2e0 + y_min;
+        y = y_min.midpoint(y_max);
         ys = vec![y];
     }
 
@@ -104,7 +102,6 @@ fn _flatten_tree(
         y,
         is_tip,
         edge_idx: 0,
-        // chunk_idx: 0,
     };
 
     edges.push(this_edge);
@@ -112,7 +109,7 @@ fn _flatten_tree(
     (edges, ys)
 }
 
-fn calc_verticals(mut edges: Edges) -> Edges {
+fn calc_verticals(mut edges: Vec<Edge>) -> Vec<Edge> {
     let mut p_ys: HashMap<NodeId, TreeFloat> = HashMap::new();
 
     for e in &edges {
@@ -132,28 +129,3 @@ fn calc_verticals(mut edges: Edges) -> Edges {
 
     edges
 }
-
-// pub fn chunk_edges(edges: &Edges, chunk_count: usize) -> Vec<Edges> {
-//     let edge_count = edges.len();
-//     if edge_count == 0 {
-//         return Vec::new();
-//     }
-//     let mut chunk_count = chunk_count;
-//     if chunk_count < 2 {
-//         chunk_count = 1;
-//     }
-//     let edge_count_per_chunk = edge_count / chunk_count;
-//     let remainder = edge_count % chunk_count;
-//     let mut chunks: Vec<Vec<Edge>> = Vec::new();
-//     for t in 0..chunk_count {
-//         let i1 = edge_count_per_chunk * t;
-//         let i2 = edge_count_per_chunk * (t + 1);
-//         let edges = &edges[i1..i2];
-//         chunks.push(edges.to_vec());
-//     }
-//     if remainder > 0 {
-//         let edges = &edges[edge_count_per_chunk * chunk_count..];
-//         chunks.push(edges.to_vec());
-//     }
-//     chunks
-// }

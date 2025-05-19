@@ -1,4 +1,4 @@
-use super::{Edges, TreeFloat};
+use super::{Edge, TreeFloat};
 use std::iter::zip;
 
 #[derive(Debug, Default)]
@@ -7,7 +7,7 @@ pub struct LttPoint {
     pub count: usize,
 }
 
-pub fn ltt(edges: &Edges, sample_count: usize) -> Vec<LttPoint> {
+pub fn ltt(edges: &Vec<Edge>, sample_count: usize) -> Vec<LttPoint> {
     let sample_every = 1e0 / sample_count as TreeFloat;
     let mut counts: Vec<usize> = Vec::new();
     let mut sample_points: Vec<TreeFloat> = Vec::new();
