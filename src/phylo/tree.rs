@@ -49,11 +49,10 @@ impl Tree {
         let mut heights: Vec<(NodeId, TreeFloat)> = Vec::new();
         if let Some(first_node_id) = self.first_node_id {
             for n in self.nodes.values() {
-                if n.is_tip() {
-                    if let Some(&node_id) = n.node_id() {
+                if n.is_tip()
+                    && let Some(&node_id) = n.node_id() {
                         heights.push((node_id, self.dist(&first_node_id, &node_id)));
                     }
-                }
             }
         }
         heights
@@ -132,11 +131,10 @@ impl Tree {
             }
 
             let mut new_node_name: Option<String> = None;
-            if let Some(yanked_node) = yanked_node {
-                if let Some(name) = yanked_node.name() {
+            if let Some(yanked_node) = yanked_node
+                && let Some(name) = yanked_node.name() {
                     new_node_name = Some(name.to_string());
                 }
-            }
 
             // println!("NEW LAST:{prev_brl} {prev_par} <- new last");
             let new_last = self
@@ -260,11 +258,10 @@ impl Tree {
         if !self.is_rooted() {
             return None;
         }
-        if let Some(root_node) = self.node(self.first_node_id) {
-            if root_node.child_node_count() != 2 {
+        if let Some(root_node) = self.node(self.first_node_id)
+            && root_node.child_node_count() != 2 {
                 return None;
             }
-        }
         let root_chld = self.children(&self.first_node_id.unwrap());
         let c1 = root_chld[0];
         let c2 = root_chld[1];
@@ -481,13 +478,13 @@ impl Tree {
     ) -> Result<Vec<NodeId>, TreeError> {
         let mut nodes: Vec<Node> = nodes.into().to_vec();
 
-        if parent_node_id.is_some() {
+        if let Some(pnid) = parent_node_id {
             if self.node_exists(parent_node_id) {
                 for node in &mut nodes {
                     node.set_parent_id(parent_node_id);
                 }
             } else {
-                return Err(TreeError::ParentNodeDoesNotExist(parent_node_id.unwrap()));
+                return Err(TreeError::ParentNodeDoesNotExist(pnid));
             }
         }
 

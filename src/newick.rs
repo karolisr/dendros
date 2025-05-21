@@ -6,7 +6,7 @@ pub fn write_newick(tree: &Tree) -> String {
         let mut newick = _write_newick(children, tree);
         if let Some(name) = tree.name(first_node_id) {
             let name = name.replace(" ", "_");
-            newick = format!("({newick}){};", name);
+            newick = format!("({newick}){name};");
         } else {
             newick = format!("({newick});");
         }
@@ -32,7 +32,7 @@ fn _write_newick(child_nodes: Vec<&Node>, tree: &Tree) -> String {
         }
 
         if let Some(brlen) = child.branch_length() {
-            newick.push_str(&format!(":{}", brlen));
+            newick.push_str(&format!(":{brlen}"));
         }
 
         newick.push(',');
@@ -116,11 +116,10 @@ fn _parse_newick(s: String, parent_id: Option<NodeId>, mut tree: Tree) -> Tree {
                             if rv.ends_with(",") {
                                 let after_rv = &s[i + 1 + x..];
                                 let mut after_rv_iter = after_rv.char_indices();
-                                if let Some((_, c)) = after_rv_iter.next() {
-                                    if c == '(' {
+                                if let Some((_, c)) = after_rv_iter.next()
+                                    && c == '(' {
                                         rv = &rv[0..rv.len() - 1];
                                     }
-                                }
                             }
                             i += x;
                             rv
@@ -139,13 +138,11 @@ fn _parse_newick(s: String, parent_id: Option<NodeId>, mut tree: Tree) -> Tree {
                 // --------------------------------------------------------------------------------
                 // ((One:0.1,Two:0.2,(Three:0.3,Four:0.4)Five:0.5)Six:0.6,Seven:0.7);
                 //   ||||||||||||||||
-                else if !is_open && !was_open {
-                    if let Some((_, c)) = s_iter.clone().next() {
-                        if c == '(' {
+                else if !is_open && !was_open
+                    && let Some((_, c)) = s_iter.clone().next()
+                        && c == '(' {
                             let _ = tree.add_nodes(nodes_from_string(&s[0..i], ","), parent_id);
                         }
-                    }
-                }
                 // --------------------------------------------------------------------------------
             }
             _ => (),
@@ -231,7 +228,7 @@ fn clean_sep<'a>(s: impl Into<&'a str>, sep: impl Into<&'a str>) -> String {
         .split(sep)
         .map(|c| match c.trim() {
             "" => sep.into(),
-            x => format!("{}{}", x, sep),
+            x => format!("{x}{sep}"),
         })
         .collect();
     ss.trim_end_matches(sep).into()
