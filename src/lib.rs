@@ -1,24 +1,22 @@
-// #![cfg_attr(
-//     debug_assertions,
-//     allow(
-//         dead_code,
-//         unused_imports,
-//         unused_variables,
-//         unused_assignments,
-//         unused_mut,
-//         clippy::needless_return,
-//         clippy::collapsible_if,
-//         clippy::collapsible_match,
-//         clippy::derivable_impls,
-//         clippy::too_many_arguments,
-//         clippy::type_complexity,
-//     )
-// )]
+#![feature(iter_collect_into)]
+// -------------------------------------
+// #![allow(dead_code)]
+// #![allow(unused_mut)]
+// #![allow(unused_imports)]
+// #![allow(unused_variables)]
+// #![allow(unused_assignments)]
+// #![allow(clippy::single_match)]
+// #![allow(clippy::collapsible_if)]
+// #![allow(clippy::derivable_impls)]
+// #![allow(clippy::type_complexity)]
+// #![allow(clippy::collapsible_match)]
+// #![allow(clippy::too_many_arguments)]
+// #![allow(clippy::vec_init_then_push)]
+// #![allow(clippy::needless_range_loop)]
+// -------------------------------------
 
 mod newick;
 mod phylo;
 
 pub use newick::{parse_newick, write_newick};
-pub use phylo::{
-    Edge, LttPoint, Node, NodeId, NodeType, Tree, TreeError, TreeFloat, flatten_tree, ltt,
-};
+pub use phylo::{Edge, LttPoint, Node, NodeId, NodeType, Tree, TreeError, TreeFloat, flatten_tree, ltt};

@@ -117,9 +117,10 @@ fn _parse_newick(s: String, parent_id: Option<NodeId>, mut tree: Tree) -> Tree {
                                 let after_rv = &s[i + 1 + x..];
                                 let mut after_rv_iter = after_rv.char_indices();
                                 if let Some((_, c)) = after_rv_iter.next()
-                                    && c == '(' {
-                                        rv = &rv[0..rv.len() - 1];
-                                    }
+                                    && c == '('
+                                {
+                                    rv = &rv[0..rv.len() - 1];
+                                }
                             }
                             i += x;
                             rv
@@ -138,11 +139,13 @@ fn _parse_newick(s: String, parent_id: Option<NodeId>, mut tree: Tree) -> Tree {
                 // --------------------------------------------------------------------------------
                 // ((One:0.1,Two:0.2,(Three:0.3,Four:0.4)Five:0.5)Six:0.6,Seven:0.7);
                 //   ||||||||||||||||
-                else if !is_open && !was_open
+                else if !is_open
+                    && !was_open
                     && let Some((_, c)) = s_iter.clone().next()
-                        && c == '(' {
-                            let _ = tree.add_nodes(nodes_from_string(&s[0..i], ","), parent_id);
-                        }
+                    && c == '('
+                {
+                    let _ = tree.add_nodes(nodes_from_string(&s[0..i], ","), parent_id);
+                }
                 // --------------------------------------------------------------------------------
             }
             _ => (),
@@ -169,9 +172,7 @@ fn node<'a>(name: impl Into<&'a str>) -> Node {
     node
 }
 
-fn nodes<'a>(names: impl Into<Vec<&'a str>>) -> Vec<Node> {
-    names.into().iter().map(|&n| node(n)).collect()
-}
+fn nodes<'a>(names: impl Into<Vec<&'a str>>) -> Vec<Node> { names.into().iter().map(|&n| node(n)).collect() }
 
 fn nodes_from_string<'a>(s: impl Into<&'a str>, sep: impl Into<&'a str>) -> Vec<Node> {
     let s: &str = s.into();

@@ -24,10 +24,7 @@ pub fn ltt(edges: &Vec<Edge>, sample_count: usize) -> Vec<LttPoint> {
     }
 
     let points: Vec<(TreeFloat, usize)> = zip(sample_points, counts).collect();
-    let points: Vec<LttPoint> = points
-        .iter()
-        .map(|a| LttPoint { time: a.0, count: a.1 })
-        .collect();
+    let points: Vec<LttPoint> = points.iter().map(|a| LttPoint { time: a.0, count: a.1 }).collect();
 
     points
 }

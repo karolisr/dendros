@@ -78,12 +78,7 @@ fn main() {
         // );
 
         // println!("\n{}", &tree);
-        println!(
-            "{} {} {}",
-            &tree.tip_count_all(),
-            &tree.is_rooted(),
-            &tree.has_branch_lengths()
-        );
+        println!("{} {} {}", &tree.tip_count_all(), &tree.is_rooted(), &tree.has_branch_lengths());
 
         // let edges = flatten_tree(&tree);
         // let chunks = chunk_edges(&edges, 1);
