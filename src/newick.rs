@@ -1,6 +1,18 @@
 use crate::{Node, NodeId, Tree, TreeFloat};
 
-pub fn write_newick(tree: &Tree) -> String {
+pub fn write_newick(trees: &[Tree]) -> String {
+    trees
+        .iter()
+        .map(newick_string)
+        .reduce(|mut a, b| {
+            a.push('\n');
+            a.push_str(&b);
+            a
+        })
+        .unwrap_or_default()
+}
+
+fn newick_string(tree: &Tree) -> String {
     if let Some(first_node_id) = &tree.first_node_id() {
         let children = tree.children(first_node_id);
         let mut newick = _write_newick(children, tree);
