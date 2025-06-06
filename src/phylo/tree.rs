@@ -293,7 +293,6 @@ impl Tree {
     }
 
     pub fn has_branch_lengths(&self) -> bool { self.has_branch_lengths }
-
     pub fn is_tip(&self, node_id: &NodeId) -> bool { self.nodes[*node_id].is_tip() }
 
     pub fn tip_node_ids(&self, node_id: &NodeId) -> Vec<NodeId> {
@@ -402,15 +401,10 @@ impl Tree {
     }
 
     pub fn tip_count_all(&self) -> usize { self.tip_count_all }
-
     pub fn internal_node_count_all(&self) -> usize { self.internal_node_count_all }
-
     pub fn node_count_all(&self) -> usize { self.node_count_all }
-
     pub fn name(&self, node_id: &NodeId) -> Option<Arc<str>> { self.nodes[*node_id].name() }
-
     pub fn parent_id(&self, node_id: &NodeId) -> Option<&NodeId> { self.nodes[*node_id].parent_id() }
-
     pub fn child_ids(&self, node_id: &NodeId) -> &[NodeId] { self.nodes[*node_id].child_ids() }
 
     pub fn children(&self, node_id: &NodeId) -> Vec<&Node> {
@@ -482,7 +476,6 @@ impl Tree {
     }
 
     pub fn node_exists(&self, node_id: Option<NodeId>) -> bool { self.node(node_id).is_some() }
-
     pub fn first_node_id(&self) -> Option<NodeId> { self.first_node_id }
 
     pub fn is_rooted(&self) -> bool {
