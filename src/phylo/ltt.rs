@@ -7,7 +7,7 @@ pub struct LttPoint {
     pub count: usize,
 }
 
-pub fn ltt(edges: &Vec<Edge>, sample_count: usize) -> Vec<LttPoint> {
+pub fn ltt(tree_height: TreeFloat, edges: &Vec<Edge>, sample_count: usize) -> Vec<LttPoint> {
     let sample_every = 1e0 / sample_count as TreeFloat;
     let mut counts: Vec<usize> = Vec::new();
     let mut sample_points: Vec<TreeFloat> = Vec::new();
@@ -19,7 +19,7 @@ pub fn ltt(edges: &Vec<Edge>, sample_count: usize) -> Vec<LttPoint> {
                 current_count += 1;
             }
         }
-        sample_points.push(sample_point);
+        sample_points.push(sample_point * tree_height);
         counts.push(current_count);
     }
 

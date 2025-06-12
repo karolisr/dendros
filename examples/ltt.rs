@@ -19,7 +19,7 @@ fn main() {
     // println!("\n{}", &tree);
 
     let edges = flatten_tree(tree);
-    let points = ltt(&edges, 100);
+    let points = ltt(tree.height(), &edges, 100);
 
     for pt in points {
         println!("{:>7.2}: {:>10}", pt.time, pt.count);
