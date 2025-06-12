@@ -22,6 +22,6 @@ fn main() {
     let points = ltt(tree.height(), &edges, 100);
 
     for pt in points {
-        println!("{:>7.2}: {:>10}", pt.time, pt.count);
+        println!("{:>7.2}: {:>10}", pt.height, pt.count);
     }
 }
