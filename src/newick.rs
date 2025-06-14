@@ -15,7 +15,7 @@ pub fn write_newick(trees: &[Tree]) -> String {
 fn newick_string(tree: &Tree) -> String {
     if let Some(first_node_id) = &tree.first_node_id() {
         let children = tree.children(first_node_id);
-        let mut newick = _write_newick(children, tree);
+        let mut newick = _newick_string(children, tree);
         if let Some(name) = tree.name(first_node_id) {
             let name = name.replace(" ", "_");
             newick = format!("({newick}){name};");
@@ -28,13 +28,13 @@ fn newick_string(tree: &Tree) -> String {
     }
 }
 
-fn _write_newick(child_nodes: Vec<&Node>, tree: &Tree) -> String {
+fn _newick_string(child_nodes: Vec<&Node>, tree: &Tree) -> String {
     let mut newick: String = String::new();
     for child in child_nodes {
         if let Some(child_id) = child.node_id() {
             let children = tree.children(child_id);
             if !children.is_empty() {
-                newick.push_str(&format!("({})", &_write_newick(children, tree)));
+                newick.push_str(&format!("({})", &_newick_string(children, tree)));
             }
         }
 
@@ -202,7 +202,8 @@ fn parse_newick_label<'a>(name: impl Into<&'a str>) -> (Option<String>, Option<T
 
     let name = match name.trim_matches(['\'', '"']) {
         "" => None,
-        x => Some(x.replace("_", " ").replace("|", " ").to_string()),
+        // x => Some(x.replace("_", " ").replace("|", " ").to_string()),
+        x => Some(x.to_string()),
     };
 
     (name, brln)
