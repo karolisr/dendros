@@ -105,6 +105,10 @@ impl Display for NodeId {
     }
 }
 
+impl From<NodeId> for String {
+    fn from(node_id: NodeId) -> Self { format!("{node_id}") }
+}
+
 impl Display for NodeType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
