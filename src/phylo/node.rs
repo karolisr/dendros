@@ -28,7 +28,7 @@ impl Node {
     pub fn new() -> Self { Self::default() }
     pub fn is_tip(&self) -> bool { self.node_type == NodeType::Tip }
     pub fn child_ids(&self) -> &[NodeId] { &self.child_ids }
-    pub(crate) fn set_child_ids(&mut self, child_ids: Vec<NodeId>) { self.child_ids = child_ids }
+    pub(super) fn set_child_ids(&mut self, child_ids: Vec<NodeId>) { self.child_ids = child_ids }
     pub fn child_node_count(&self) -> usize { self.child_ids.len() }
     pub fn add_child_id(&mut self, node_id: NodeId) { self.child_ids.push(node_id) }
     pub fn add_child_ids<'a>(&mut self, node_ids: impl Into<&'a [NodeId]>) { self.child_ids.extend(node_ids.into()); }

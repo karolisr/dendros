@@ -32,7 +32,7 @@ fn main() {
     for mut tree in trees {
         tree.sort(false);
 
-        assert!(tree.validate().is_ok());
+        assert!(tree.validate(false).is_ok());
 
         // let newick_string = write_newick(&tree);
         // println!("{newick_string}");

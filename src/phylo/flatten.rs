@@ -18,7 +18,7 @@ pub struct Edge {
     pub edge_idx: usize,
 }
 
-pub fn flatten_tree(tree: &Tree) -> Vec<Edge> {
+pub(super) fn flatten_tree(tree: &Tree) -> Vec<Edge> {
     let ntip = tree.tip_count_all();
     let tree_height = tree.height();
     let mut tip_id_counter = ntip;

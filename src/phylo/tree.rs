@@ -1,4 +1,6 @@
+use super::Edge;
 use super::TreeFloat;
+use super::flatten_tree;
 use super::node::{Node, NodeId, NodeType};
 use rayon::prelude::*;
 use slotmap::SlotMap;
@@ -9,6 +11,7 @@ use thiserror::Error;
 #[derive(Debug, Default, Clone)]
 pub struct Tree {
     nodes: SlotMap<NodeId, Node>,
+    edges: Option<Vec<Edge>>,
     first_node_id: Option<NodeId>,
     tip_count_all: usize,
     internal_node_count_all: usize,
@@ -155,7 +158,8 @@ impl Tree {
             }
             self.nodes.remove(left_id);
         }
-        self.validate()
+        self.edges = None;
+        self.validate(true)
     }
 
     pub fn path(&self, right_id: &NodeId, left_id: &NodeId) -> Vec<NodeId> {
@@ -189,11 +193,12 @@ impl Tree {
 
     pub fn unroot(&mut self) -> Option<Node> {
         let mut yanked_node: Option<Node> = None;
-        if let Some(node_to_drop_id) = self.unroot_pick_node_to_drop() {
+        if let Some(node_to_drop_id) = self.pick_node_to_drop_before_unroot() {
             self.slide_brlen_through_root(node_to_drop_id);
             yanked_node = self.node(Some(node_to_drop_id)).cloned();
             self.yank_node(&node_to_drop_id);
-            let _ = self.validate();
+            self.edges = None;
+            let _ = self.validate(true);
         }
         yanked_node
     }
@@ -249,7 +254,7 @@ impl Tree {
         self.nodes[receive_node_id].set_branch_length(Some(new_brlen));
     }
 
-    fn unroot_pick_node_to_drop(&self) -> Option<NodeId> {
+    fn pick_node_to_drop_before_unroot(&self) -> Option<NodeId> {
         if !self.is_rooted() {
             return None;
         }
@@ -298,13 +303,10 @@ impl Tree {
     pub fn tip_node_ids(&self, node_id: &NodeId) -> Vec<NodeId> {
         let cs: &[NodeId] = self.child_ids(node_id);
         let mut rv: Vec<NodeId> = Vec::new();
-        for c in cs {
-            if self.is_tip(c) {
-                rv.push(*c);
-            } else {
-                rv.append(&mut self.tip_node_ids(c));
-            }
+        if self.is_tip(node_id) {
+            rv.push(*node_id)
         }
+        cs.iter().for_each(|c| rv.append(&mut self.tip_node_ids(c)));
         rv
     }
 
@@ -352,10 +354,33 @@ impl Tree {
         rv
     }
 
+    pub fn edges_are_stale(&self) -> bool { self.edges.is_none() }
+    pub fn edges(&self) -> Option<&Vec<Edge>> { self.edges.as_ref() }
+
     pub fn sort(&mut self, reverse: bool) {
         if let Some(id) = self.first_node_id {
             self.sort_nodes(&id, reverse);
+            self.edges = None;
+            self.make_fresh_edges();
         }
+    }
+
+    pub fn make_fresh_edges(&mut self) {
+        if let Some(_) = self.first_node_id
+            && self.edges_are_stale()
+        {
+            let mut edges = flatten_tree(self);
+            for (i_e, edge) in edges.iter_mut().enumerate() {
+                edge.edge_idx = i_e;
+            }
+            self.edges = Some(edges);
+        }
+    }
+
+    pub fn sorted(tree: &Self, reverse: bool) -> Self {
+        let mut tmp = tree.clone();
+        tmp.sort(reverse);
+        tmp
     }
 
     fn sort_nodes(&mut self, node_id: &NodeId, reverse: bool) {
@@ -443,6 +468,7 @@ impl Tree {
             if self.node_exists(parent_node_id) {
                 for node in &mut nodes {
                     node.set_parent_id(parent_node_id);
+                    self.edges = None;
                 }
             } else {
                 return Err(TreeError::ParentNodeDoesNotExist(pnid));
@@ -485,7 +511,7 @@ impl Tree {
         false
     }
 
-    pub fn validate(&mut self) -> Result<NodeId, TreeError> {
+    pub fn validate(&mut self, make_fresh_edges: bool) -> Result<NodeId, TreeError> {
         // let mut count_of_unset: usize = 0;
         let mut count_of_tip: usize = 0;
         let mut count_of_internal: usize = 0;
@@ -552,6 +578,10 @@ impl Tree {
 
         if let Some(node) = self.node_mut(self.first_node_id) {
             node.set_branch_length(None);
+        }
+
+        if make_fresh_edges {
+            self.make_fresh_edges();
         }
 
         Ok(self.first_node_id.unwrap())

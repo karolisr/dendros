@@ -10,14 +10,14 @@ fn main() {
     let _ = tree.add_new_node(Some("tip_2"), Some(0.5), node_2_id).ok();
     let _ = tree.add_new_node(Some("tip_3"), Some(0.5), node_2_id).ok();
 
-    assert!(tree.validate().is_ok());
+    assert!(tree.validate(true).is_ok());
 
     tree.sort(true);
 
     tree.unroot();
     let _ = tree.root(tip_1_id.unwrap());
 
-    assert!(tree.validate().is_ok());
+    assert!(tree.validate(true).is_ok());
 
     let first_node_id = &tree.first_node_id().unwrap();
 

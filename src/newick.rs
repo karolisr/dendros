@@ -59,7 +59,7 @@ pub fn parse_newick(s: String) -> Option<Vec<Tree>> {
         let mut tree: Tree = Tree::default();
         let s_line_clean = clean_newick_str(&s_line);
         tree = _parse_newick(s_line_clean, None, tree);
-        match tree.validate() {
+        match tree.validate(true) {
             Ok(_) => rv.push(tree),
             Err(err) => {
                 println!("{err:?}");

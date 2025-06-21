@@ -1,5 +1,4 @@
 // use dendros::Tree;
-use dendros::flatten_tree;
 use dendros::ltt;
 use dendros::parse_newick;
 use std::fs::read_to_string;
@@ -15,11 +14,12 @@ fn main() {
     let tree = &mut trees[0];
 
     tree.unroot();
+    tree.make_fresh_edges();
 
     // println!("\n{}", &tree);
 
-    let edges = flatten_tree(tree);
-    let points = ltt(tree.height(), &edges, 100);
+    let edges = tree.edges().unwrap();
+    let points = ltt(tree.height(), edges, 100);
 
     for pt in points {
         println!("{:>7.2}: {:>10}", pt.height, pt.count);
