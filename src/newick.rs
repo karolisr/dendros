@@ -184,7 +184,9 @@ fn node<'a>(name: impl Into<&'a str>) -> Node {
     node
 }
 
-fn nodes<'a>(names: impl Into<Vec<&'a str>>) -> Vec<Node> { names.into().iter().map(|&n| node(n)).collect() }
+fn nodes<'a>(names: impl Into<Vec<&'a str>>) -> Vec<Node> {
+    names.into().iter().map(|&n| node(n)).collect()
+}
 
 fn nodes_from_string<'a>(s: impl Into<&'a str>, sep: impl Into<&'a str>) -> Vec<Node> {
     let s: &str = s.into();

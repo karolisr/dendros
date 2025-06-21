@@ -22,7 +22,10 @@ fn main() {
     let first_node_id = &tree.first_node_id().unwrap();
 
     println!("child_count: {first_node_id} {}", tree.child_count(first_node_id));
-    println!("child_count_recursive: {first_node_id} {}", tree.child_count_recursive(first_node_id));
+    println!(
+        "child_count_recursive: {first_node_id} {}",
+        tree.child_count_recursive(first_node_id)
+    );
     println!("tip_count: {first_node_id} {}", tree.tip_count(first_node_id));
     println!("tip_count_recursive: {first_node_id} {}", tree.tip_count_recursive(first_node_id));
 

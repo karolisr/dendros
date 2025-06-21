@@ -1,79 +1,44 @@
 [package]
-name = "dendros"
-version = "0.0.0"
-edition = "2024"
-authors = ["Karolis Ramanauskas"]
-repository = "https://github.com/karolisr/dendros"
-readme = "README.md"
-license-file = "LICENSE"
-
-categories = [
-    "science::bioinformatics",
-]
+    authors=["Karolis Ramanauskas"]
+    categories=["science::bioinformatics"]
+    edition="2024"
+    license-file="LICENSE"
+    name="dendros"
+    readme="README.md"
+    repository="https://github.com/karolisr/dendros"
+    version="0.0.0"
 
 [lib]
-name = "dendros"
-crate-type = ["lib"]
-
-# See more keys and their definitions at:
-#   https://doc.rust-lang.org/cargo/reference/manifest.html
-
-# Code generation options
-#   https://doc.rust-lang.org/rustc/codegen-options/index.html
-
-# ------------------------------------------------------------------------
-[profile.dev]
-debug-assertions = true
-incremental = true      # Compile your binary in smaller steps.
-codegen-units = 2       # Allows LLVM to perform better optimization. 1-256; 1=slow compile time; 256=faster compile time.
-lto = false             # Enables link-time-optimizations. Use false for faster compile time.
-opt-level = 1           # "s" prioritizes small binary size. Use 3 for faster compile time.
-panic = "abort"         # Higher performance by disabling panic handlers.
-strip = false           # Ensures debug symbols are removed.
-debug = true
-overflow-checks = true
-rpath = false
-
-# Defaults ---------------
-# debug-assertions = true
-# incremental = true
-# codegen-units = 256
-# lto = false
-# opt-level = 1
-# panic = "unwind"
-# strip = false
-# debug = true
-# overflow-checks = true
-# rpath = false
-# ------------------------------------------------------------------------
-
-# ------------------------------------------------------------------------
-[profile.release]
-debug-assertions = false
-incremental = true       # Compile your binary in smaller steps.
-codegen-units = 1        # Allows LLVM to perform better optimization. 1-256; 1=slow compile time; 256=faster compile time.
-lto = true               # Enables link-time-optimizations. Use false for faster compile time.
-opt-level = 3            # "s" prioritizes small binary size. Use 3 for faster compile time.
-panic = "abort"          # Higher performance by disabling panic handlers.
-strip = true             # Ensures debug symbols are removed.
-debug = false
-overflow-checks = false
-rpath = false
-
-# Defaults ---------------
-# debug-assertions = false
-# incremental = false
-# codegen-units = 16
-# lto = false
-# opt-level = 3
-# panic = "unwind"
-# strip = "none"
-# debug = false
-# overflow-checks = false
-# rpath = false
-# ------------------------------------------------------------------------
+    crate-type=["lib"]
+    name="dendros"
 
 [dependencies]
-slotmap = "1"
-thiserror = "2"
-rayon = "1.10.0"
+    rayon="1.10.0"
+    slotmap="1"
+    thiserror="2"
+
+# --------------------------------------------------------------------------------------------------
+[profile.dev]
+    codegen-units=6          # 256      | Allows LLVM to perform better optimization. 1-256; 1=slow compile time; 256=faster compile time.
+    debug = true             # true     |
+    debug-assertions = true  # true     |
+    incremental = true       # true     | Compile your binary in smaller steps.
+    lto = false              # false    | Enables link-time-optimizations. Use false for faster compile time.
+    opt-level = 1            # 1        | "s" prioritizes small binary size. Use 0 for faster compile time.
+    overflow-checks = true   # true     |
+    panic = "abort"          # "unwind" | Higher performance by disabling panic handlers.
+    rpath = false            # false    |
+    strip = false            # false    | Ensures debug symbols are removed.
+# --------------------------------------------------------------------------------------------------
+[profile.release]
+    codegen-units = 1        # 16       | Allows LLVM to perform better optimization. 1-256; 1=slow compile time; 256=faster compile time.
+    debug = false            # false    |
+    debug-assertions = false # false    |
+    incremental = true       # false    | Compile your binary in smaller steps.
+    lto = true               # false    | Enables link-time-optimizations. Use false for faster compile time.
+    opt-level = 3            # 3        | "s" prioritizes small binary size. Use 0 for faster compile time.
+    overflow-checks = true   # false    |
+    panic = "abort"          # "unwind" | Higher performance by disabling panic handlers.
+    rpath = false            # false    |
+    strip = true             # "none"   | Ensures debug symbols are removed.
+# --------------------------------------------------------------------------------------------------

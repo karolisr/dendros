@@ -23,7 +23,8 @@ pub(super) fn flatten_tree(tree: &Tree) -> Vec<Edge> {
     let tree_height = tree.height();
     let mut tip_id_counter = ntip;
     if let Some(id) = &tree.first_node_id() {
-        let (mut edges, _) = _flatten_tree(id, None, 0e0, tree, tree_height, ntip, &mut tip_id_counter);
+        let (mut edges, _) =
+            _flatten_tree(id, None, 0e0, tree, tree_height, ntip, &mut tip_id_counter);
         edges = calc_verticals(edges);
         edges.par_sort_by(|a, b| a.y.total_cmp(&b.y));
         edges
@@ -33,8 +34,8 @@ pub(super) fn flatten_tree(tree: &Tree) -> Vec<Edge> {
 }
 
 fn _flatten_tree(
-    node_id: &NodeId, parent_node_id: Option<NodeId>, parent_height: TreeFloat, tree: &Tree, tree_height: TreeFloat,
-    ntip: usize, tip_id_counter: &mut usize,
+    node_id: &NodeId, parent_node_id: Option<NodeId>, parent_height: TreeFloat, tree: &Tree,
+    tree_height: TreeFloat, ntip: usize, tip_id_counter: &mut usize,
 ) -> (Vec<Edge>, Vec<TreeFloat>) {
     let mut edges: Vec<Edge> = Vec::new();
     if ntip == 0 {
@@ -60,8 +61,15 @@ fn _flatten_tree(
 
     let mut ys: Vec<TreeFloat> = Vec::new();
     for child_node_id in child_node_ids {
-        let (mut child_edges, mut child_ys) =
-            _flatten_tree(child_node_id, Some(*node_id), node_height, tree, tree_height, ntip, tip_id_counter);
+        let (mut child_edges, mut child_ys) = _flatten_tree(
+            child_node_id,
+            Some(*node_id),
+            node_height,
+            tree,
+            tree_height,
+            ntip,
+            tip_id_counter,
+        );
 
         edges.append(&mut child_edges);
         ys.append(&mut child_ys);
