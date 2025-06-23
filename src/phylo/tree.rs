@@ -300,6 +300,7 @@ impl Tree {
     }
 
     pub fn has_branch_lengths(&self) -> bool { self.has_branch_lengths }
+
     pub fn is_tip(&self, node_id: &NodeId) -> bool { self.nodes[*node_id].is_tip() }
 
     pub fn tip_node_ids(&self, node_id: &NodeId) -> Vec<NodeId> {
@@ -331,9 +332,11 @@ impl Tree {
 
     pub fn dist(&self, left: &NodeId, right: &NodeId) -> TreeFloat {
         let mut h: TreeFloat = 0e0;
+
         if left != right {
             h += self.branch_length(*right).unwrap_or(0e0);
         }
+
         match self.parent_id(right) {
             Some(p) => {
                 if p == left {
@@ -350,13 +353,16 @@ impl Tree {
 
     pub fn child_count_recursive(&self, node_id: &NodeId) -> usize {
         let mut rv: usize = self.child_count(node_id);
+
         for child_id in self.child_ids(node_id) {
             rv += self.child_count_recursive(child_id)
         }
+
         rv
     }
 
     pub fn edges_are_stale(&self) -> bool { self.edges.is_none() }
+
     pub fn edges(&self) -> Option<&Vec<Edge>> { self.edges.as_ref() }
 
     pub fn sort(&mut self, reverse: bool) {
@@ -372,11 +378,18 @@ impl Tree {
             && self.edges_are_stale()
         {
             let mut edges = flatten_tree(self);
-            for (i_e, edge) in edges.iter_mut().enumerate() {
-                edge.edge_idx = i_e;
+
+            for (edge_idx, edge) in edges.iter_mut().enumerate() {
+                edge.edge_idx = edge_idx;
+                self.nodes[edge.node_id].set_edge_idx(edge_idx);
             }
+
             self.edges = Some(edges);
         }
+    }
+
+    pub fn edge_idx_for_node_id(&self, node_id: NodeId) -> Option<usize> {
+        self.node(Some(node_id))?.edge_idx()
     }
 
     pub fn sorted(tree: &Self, reverse: bool) -> Self {
@@ -428,12 +441,17 @@ impl Tree {
     }
 
     pub fn tip_count_all(&self) -> usize { self.tip_count_all }
+
     pub fn internal_node_count_all(&self) -> usize { self.internal_node_count_all }
+
     pub fn node_count_all(&self) -> usize { self.node_count_all }
+
     pub fn name(&self, node_id: &NodeId) -> Option<Arc<str>> { self.nodes[*node_id].name() }
+
     pub fn parent_id(&self, node_id: &NodeId) -> Option<&NodeId> {
         self.nodes[*node_id].parent_id()
     }
+
     pub fn child_ids(&self, node_id: &NodeId) -> &[NodeId] { self.nodes[*node_id].child_ids() }
 
     pub fn first_child_id(&self, node_id: &NodeId) -> Option<&NodeId> {
@@ -470,31 +488,10 @@ impl Tree {
         {
             let (&tip_id_0, &tip_id_1) = self.bounding_tip_ids_for_clade(node_id);
 
-            let mut start: Option<&Edge> = None;
-            let mut end: Option<&Edge> = None;
+            let start: &Edge = &edges[self.edge_idx_for_node_id(tip_id_0)?];
+            let end: &Edge = &edges[self.edge_idx_for_node_id(tip_id_1)?];
 
-            edges.iter().for_each(|e| match e.node_id {
-                id if id == tip_id_0 => start = Some(e),
-                id if id == tip_id_1 => end = Some(e),
-                _ => {}
-            });
-
-            for e in edges {
-                match e.node_id {
-                    id if id == tip_id_0 => start = Some(e),
-                    id if id == tip_id_1 => {
-                        end = Some(e);
-                        break;
-                    }
-                    _ => {}
-                }
-            }
-
-            if tip_id_0 == tip_id_1 {
-                end = start
-            }
-
-            Some((start?, end?))
+            Some((start, end))
         } else {
             None
         }
@@ -573,6 +570,7 @@ impl Tree {
     }
 
     pub fn node_exists(&self, node_id: Option<NodeId>) -> bool { self.node(node_id).is_some() }
+
     pub fn first_node_id(&self) -> Option<NodeId> { self.first_node_id }
 
     pub fn is_rooted(&self) -> bool {
