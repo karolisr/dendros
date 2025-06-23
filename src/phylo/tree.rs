@@ -436,6 +436,70 @@ impl Tree {
     }
     pub fn child_ids(&self, node_id: &NodeId) -> &[NodeId] { self.nodes[*node_id].child_ids() }
 
+    pub fn first_child_id(&self, node_id: &NodeId) -> Option<&NodeId> {
+        self.child_ids(node_id).first()
+    }
+
+    pub fn last_child_id(&self, node_id: &NodeId) -> Option<&NodeId> {
+        self.child_ids(node_id).last()
+    }
+
+    pub fn bounding_tip_ids_for_clade<'a>(
+        &'a self, node_id: &'a NodeId,
+    ) -> (&'a NodeId, &'a NodeId) {
+        (self.first_tip_id_for_clade(node_id), self.last_tip_id_for_clade(node_id))
+    }
+
+    pub fn first_tip_id_for_clade<'a>(&'a self, node_id: &'a NodeId) -> &'a NodeId {
+        match self.first_child_id(node_id) {
+            Some(child_id) => self.first_tip_id_for_clade(child_id),
+            None => node_id,
+        }
+    }
+
+    pub fn last_tip_id_for_clade<'a>(&'a self, node_id: &'a NodeId) -> &'a NodeId {
+        match self.last_child_id(node_id) {
+            Some(child_id) => self.last_tip_id_for_clade(child_id),
+            None => node_id,
+        }
+    }
+
+    pub fn bounding_tip_edges_for_clade(&self, node_id: &NodeId) -> Option<(&Edge, &Edge)> {
+        if self.node_exists(Some(*node_id))
+            && let Some(edges) = self.edges()
+        {
+            let (&tip_id_0, &tip_id_1) = self.bounding_tip_ids_for_clade(node_id);
+
+            let mut start: Option<&Edge> = None;
+            let mut end: Option<&Edge> = None;
+
+            edges.iter().for_each(|e| match e.node_id {
+                id if id == tip_id_0 => start = Some(e),
+                id if id == tip_id_1 => end = Some(e),
+                _ => {}
+            });
+
+            for e in edges {
+                match e.node_id {
+                    id if id == tip_id_0 => start = Some(e),
+                    id if id == tip_id_1 => {
+                        end = Some(e);
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+
+            if tip_id_0 == tip_id_1 {
+                end = start
+            }
+
+            Some((start?, end?))
+        } else {
+            None
+        }
+    }
+
     pub fn children(&self, node_id: &NodeId) -> Vec<&Node> {
         let mut rv = Vec::new();
         for &child_id in self.child_ids(node_id) {
