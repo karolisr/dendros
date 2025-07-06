@@ -26,17 +26,29 @@ pub struct Node {
 }
 
 impl Node {
-    pub fn new() -> Self { Self::default() }
+    pub fn new() -> Self {
+        Self::default()
+    }
 
-    pub fn is_tip(&self) -> bool { self.node_type == NodeType::Tip }
+    pub fn is_tip(&self) -> bool {
+        self.node_type == NodeType::Tip
+    }
 
-    pub fn child_ids(&self) -> &[NodeId] { &self.child_ids }
+    pub fn child_ids(&self) -> &[NodeId] {
+        &self.child_ids
+    }
 
-    pub(super) fn set_child_ids(&mut self, child_ids: Vec<NodeId>) { self.child_ids = child_ids }
+    pub(super) fn set_child_ids(&mut self, child_ids: Vec<NodeId>) {
+        self.child_ids = child_ids
+    }
 
-    pub fn child_node_count(&self) -> usize { self.child_ids.len() }
+    pub fn child_node_count(&self) -> usize {
+        self.child_ids.len()
+    }
 
-    pub fn add_child_id(&mut self, node_id: NodeId) { self.child_ids.push(node_id) }
+    pub fn add_child_id(&mut self, node_id: NodeId) {
+        self.child_ids.push(node_id)
+    }
 
     pub fn add_child_ids<'a>(&mut self, node_ids: impl Into<&'a [NodeId]>) {
         self.child_ids.extend(node_ids.into());
@@ -55,26 +67,50 @@ impl Node {
         }
     }
 
-    pub(super) fn edge_idx(&self) -> Option<usize> { self.edge_idx }
-    pub(super) fn set_edge_idx(&mut self, edge_idx: usize) { self.edge_idx = Some(edge_idx); }
+    pub(super) fn edge_idx(&self) -> Option<usize> {
+        self.edge_idx
+    }
 
-    pub fn node_id(&self) -> Option<&NodeId> { self.node_id.as_ref() }
-    pub fn set_node_id(&mut self, node_id: NodeId) { self.node_id = Some(node_id); }
+    pub(super) fn set_edge_idx(&mut self, edge_idx: usize) {
+        self.edge_idx = Some(edge_idx);
+    }
 
-    pub fn parent_id(&self) -> Option<&NodeId> { self.parent_id.as_ref() }
-    pub fn set_parent_id(&mut self, node_id: Option<NodeId>) { self.parent_id = node_id; }
+    pub fn node_id(&self) -> Option<&NodeId> {
+        self.node_id.as_ref()
+    }
 
-    pub fn branch_length(&self) -> Option<TreeFloat> { self.branch_length }
+    pub fn set_node_id(&mut self, node_id: NodeId) {
+        self.node_id = Some(node_id);
+    }
+
+    pub fn parent_id(&self) -> Option<&NodeId> {
+        self.parent_id.as_ref()
+    }
+
+    pub fn set_parent_id(&mut self, node_id: Option<NodeId>) {
+        self.parent_id = node_id;
+    }
+
+    pub fn branch_length(&self) -> Option<TreeFloat> {
+        self.branch_length
+    }
+
     pub fn set_branch_length(&mut self, branch_length: Option<TreeFloat>) {
         self.branch_length = branch_length;
     }
 
-    pub fn name(&self) -> Option<Arc<str>> { self.name.clone() }
+    pub fn name(&self) -> Option<Arc<str>> {
+        self.name.clone()
+    }
+
     pub fn set_name<'a>(&mut self, name: Option<impl Into<&'a str>>) {
         self.name = name.map(|name| name.into().into());
     }
 
-    pub fn node_type(&self) -> NodeType { self.node_type }
+    pub fn node_type(&self) -> NodeType {
+        self.node_type
+    }
+
     pub fn set_node_type(&mut self) -> NodeType {
         if self.child_ids.len() >= 2 && self.parent_id.is_some() {
             self.node_type = NodeType::Internal
@@ -121,7 +157,9 @@ impl Display for NodeId {
 }
 
 impl From<NodeId> for String {
-    fn from(node_id: NodeId) -> Self { format!("{node_id}") }
+    fn from(node_id: NodeId) -> Self {
+        format!("{node_id}")
+    }
 }
 
 impl Display for NodeType {

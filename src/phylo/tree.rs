@@ -299,9 +299,13 @@ impl Tree {
         node_to_drop.node_id().copied()
     }
 
-    pub fn has_branch_lengths(&self) -> bool { self.has_branch_lengths }
+    pub fn has_branch_lengths(&self) -> bool {
+        self.has_branch_lengths
+    }
 
-    pub fn is_tip(&self, node_id: &NodeId) -> bool { self.nodes[*node_id].is_tip() }
+    pub fn is_tip(&self, node_id: &NodeId) -> bool {
+        self.nodes[*node_id].is_tip()
+    }
 
     pub fn tip_node_ids(&self, node_id: &NodeId) -> Vec<NodeId> {
         let cs: &[NodeId] = self.child_ids(node_id);
@@ -349,7 +353,9 @@ impl Tree {
         }
     }
 
-    pub fn child_count(&self, node_id: &NodeId) -> usize { self.nodes[*node_id].child_node_count() }
+    pub fn child_count(&self, node_id: &NodeId) -> usize {
+        self.nodes[*node_id].child_node_count()
+    }
 
     pub fn child_count_recursive(&self, node_id: &NodeId) -> usize {
         let mut rv: usize = self.child_count(node_id);
@@ -361,9 +367,13 @@ impl Tree {
         rv
     }
 
-    pub fn edges_are_stale(&self) -> bool { self.edges.is_none() }
+    pub fn edges_are_stale(&self) -> bool {
+        self.edges.is_none()
+    }
 
-    pub fn edges(&self) -> Option<&Vec<Edge>> { self.edges.as_ref() }
+    pub fn edges(&self) -> Option<&Vec<Edge>> {
+        self.edges.as_ref()
+    }
 
     pub fn sort(&mut self, reverse: bool) {
         if let Some(id) = self.first_node_id {
@@ -428,7 +438,9 @@ impl Tree {
         rv
     }
 
-    pub fn new() -> Self { Self::default() }
+    pub fn new() -> Self {
+        Self::default()
+    }
 
     pub fn branch_length(&self, node_id: NodeId) -> Option<TreeFloat> {
         if self.has_branch_lengths {
@@ -440,19 +452,29 @@ impl Tree {
         }
     }
 
-    pub fn tip_count_all(&self) -> usize { self.tip_count_all }
+    pub fn tip_count_all(&self) -> usize {
+        self.tip_count_all
+    }
 
-    pub fn internal_node_count_all(&self) -> usize { self.internal_node_count_all }
+    pub fn internal_node_count_all(&self) -> usize {
+        self.internal_node_count_all
+    }
 
-    pub fn node_count_all(&self) -> usize { self.node_count_all }
+    pub fn node_count_all(&self) -> usize {
+        self.node_count_all
+    }
 
-    pub fn name(&self, node_id: &NodeId) -> Option<Arc<str>> { self.nodes[*node_id].name() }
+    pub fn name(&self, node_id: &NodeId) -> Option<Arc<str>> {
+        self.nodes[*node_id].name()
+    }
 
     pub fn parent_id(&self, node_id: &NodeId) -> Option<&NodeId> {
         self.nodes[*node_id].parent_id()
     }
 
-    pub fn child_ids(&self, node_id: &NodeId) -> &[NodeId] { self.nodes[*node_id].child_ids() }
+    pub fn child_ids(&self, node_id: &NodeId) -> &[NodeId] {
+        self.nodes[*node_id].child_ids()
+    }
 
     pub fn first_child_id(&self, node_id: &NodeId) -> Option<&NodeId> {
         self.child_ids(node_id).first()
@@ -569,9 +591,13 @@ impl Tree {
         if let Some(node_id) = node_id { self.nodes.get_mut(node_id) } else { None }
     }
 
-    pub fn node_exists(&self, node_id: Option<NodeId>) -> bool { self.node(node_id).is_some() }
+    pub fn node_exists(&self, node_id: Option<NodeId>) -> bool {
+        self.node(node_id).is_some()
+    }
 
-    pub fn first_node_id(&self) -> Option<NodeId> { self.first_node_id }
+    pub fn first_node_id(&self) -> Option<NodeId> {
+        self.first_node_id
+    }
 
     pub fn is_rooted(&self) -> bool {
         if let Some(node) = self.node(self.first_node_id()) {
