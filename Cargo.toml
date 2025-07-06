@@ -6,7 +6,8 @@
     name="dendros"
     readme="README.md"
     repository="https://github.com/karolisr/dendros"
-    version="0.0.0"
+    rust-version="1.88"
+    version="0.1.0"
 
 [lib]
     crate-type=["lib"]
@@ -17,28 +18,26 @@
     slotmap="1"
     thiserror="2"
 
-# --------------------------------------------------------------------------------------------------
-[profile.dev]
-    codegen-units=6          # 256      | Allows LLVM to perform better optimization. 1-256; 1=slow compile time; 256=faster compile time.
-    debug = true             # true     |
-    debug-assertions = true  # true     |
-    incremental = true       # true     | Compile your binary in smaller steps.
-    lto = false              # false    | Enables link-time-optimizations. Use false for faster compile time.
-    opt-level = 1            # 1        | "s" prioritizes small binary size. Use 0 for faster compile time.
-    overflow-checks = true   # true     |
-    panic = "abort"          # "unwind" | Higher performance by disabling panic handlers.
-    rpath = false            # false    |
-    strip = false            # false    | Ensures debug symbols are removed.
-# --------------------------------------------------------------------------------------------------
-[profile.release]
-    codegen-units = 1        # 16       | Allows LLVM to perform better optimization. 1-256; 1=slow compile time; 256=faster compile time.
-    debug = false            # false    |
-    debug-assertions = false # false    |
-    incremental = true       # false    | Compile your binary in smaller steps.
-    lto = true               # false    | Enables link-time-optimizations. Use false for faster compile time.
-    opt-level = 3            # 3        | "s" prioritizes small binary size. Use 0 for faster compile time.
-    overflow-checks = true   # false    |
-    panic = "abort"          # "unwind" | Higher performance by disabling panic handlers.
-    rpath = false            # false    |
-    strip = true             # "none"   | Ensures debug symbols are removed.
-# --------------------------------------------------------------------------------------------------
+[profile.dev] # ------------------------------------------------------------------------------------
+    codegen-units=6       # 256
+    debug=true            # true
+    debug-assertions=true # true
+    incremental=true      # true
+    lto=false             # false
+    opt-level=1           # 1
+    overflow-checks=true  # true
+    panic="abort"         # "unwind"
+    rpath=false           # false
+    strip=false           # false
+
+[profile.release] # --------------------------------------------------------------------------------
+    codegen-units=1        # 16
+    debug=false            # false
+    debug-assertions=false # false
+    incremental=true       # false
+    lto=true               # false
+    opt-level=3            # 3
+    overflow-checks=true   # false
+    panic="abort"          # "unwind"
+    rpath=false            # false
+    strip=true             # "none"
