@@ -7,7 +7,11 @@ pub struct LttPoint {
     pub count: usize,
 }
 
-pub fn ltt(tree_height: TreeFloat, edges: &Vec<Edge>, sample_count: usize) -> Vec<LttPoint> {
+pub fn ltt(
+    tree_height: TreeFloat,
+    edges: &Vec<Edge>,
+    sample_count: usize,
+) -> Vec<LttPoint> {
     let sample_every = 1e0 / sample_count as TreeFloat;
     let mut counts: Vec<usize> = Vec::new();
     let mut heights: Vec<TreeFloat> = Vec::new();
@@ -16,7 +20,9 @@ pub fn ltt(tree_height: TreeFloat, edges: &Vec<Edge>, sample_count: usize) -> Ve
         let relative_position = sample_idx as TreeFloat * sample_every;
         let mut current_count: usize = 0;
         for edge in edges {
-            if edge.x0 < relative_position && edge.x1 >= relative_position - sample_every / 1e1 {
+            if edge.x0 < relative_position
+                && edge.x1 >= relative_position - sample_every / 1e1
+            {
                 current_count += 1;
             }
         }
@@ -24,5 +30,7 @@ pub fn ltt(tree_height: TreeFloat, edges: &Vec<Edge>, sample_count: usize) -> Ve
         counts.push(current_count);
     }
 
-    zip(heights, counts).map(|(height, count)| LttPoint { height, count }).collect()
+    zip(heights, counts)
+        .map(|(height, count)| LttPoint { height, count })
+        .collect()
 }

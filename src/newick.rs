@@ -34,7 +34,10 @@ fn _newick_string(child_nodes: Vec<&Node>, tree: &Tree) -> String {
         if let Some(child_id) = child.node_id() {
             let children = tree.children(child_id);
             if !children.is_empty() {
-                newick.push_str(&format!("({})", &_newick_string(children, tree)));
+                newick.push_str(&format!(
+                    "({})",
+                    &_newick_string(children, tree)
+                ));
             }
         }
 
@@ -145,7 +148,10 @@ fn _parse_newick(s: String, parent_id: Option<NodeId>, mut tree: Tree) -> Tree {
                     };
 
                     if !no_parens.is_empty() {
-                        let _ = tree.add_nodes(nodes_from_string(no_parens, ","), parent_id);
+                        let _ = tree.add_nodes(
+                            nodes_from_string(no_parens, ","),
+                            parent_id,
+                        );
                     }
                 }
                 // --------------------------------------------------------------------------------
@@ -156,7 +162,8 @@ fn _parse_newick(s: String, parent_id: Option<NodeId>, mut tree: Tree) -> Tree {
                     && let Some((_, c)) = s_iter.clone().next()
                     && c == '('
                 {
-                    let _ = tree.add_nodes(nodes_from_string(&s[0..i], ","), parent_id);
+                    let _ = tree
+                        .add_nodes(nodes_from_string(&s[0..i], ","), parent_id);
                 }
                 // --------------------------------------------------------------------------------
             }
@@ -188,14 +195,19 @@ fn nodes<'a>(names: impl Into<Vec<&'a str>>) -> Vec<Node> {
     names.into().iter().map(|&n| node(n)).collect()
 }
 
-fn nodes_from_string<'a>(s: impl Into<&'a str>, sep: impl Into<&'a str>) -> Vec<Node> {
+fn nodes_from_string<'a>(
+    s: impl Into<&'a str>,
+    sep: impl Into<&'a str>,
+) -> Vec<Node> {
     let s: &str = s.into();
     let sep: &str = sep.into();
     let nds: Vec<&str> = s.split(sep).collect();
     nodes(nds)
 }
 
-fn parse_newick_label<'a>(name: impl Into<&'a str>) -> (Option<String>, Option<TreeFloat>) {
+fn parse_newick_label<'a>(
+    name: impl Into<&'a str>,
+) -> (Option<String>, Option<TreeFloat>) {
     let name: &str = name.into();
     let (name, brln) = match name.rsplit_once(':') {
         Some((name, brln)) => (name, brln.parse::<TreeFloat>().ok()),

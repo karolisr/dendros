@@ -55,7 +55,8 @@ impl Tree {
                 if n.is_tip()
                     && let Some(&node_id) = n.node_id()
                 {
-                    heights.push((node_id, self.dist(&first_node_id, &node_id)));
+                    heights
+                        .push((node_id, self.dist(&first_node_id, &node_id)));
                 }
             }
         }
@@ -100,10 +101,14 @@ impl Tree {
         }
         let yanked_node = self.unroot();
         if let Some(left_id) = self.first_node_id {
-            let new_root_id = self.add_new_node(<Option<&str>>::None, None, None).ok().unwrap();
+            let new_root_id = self
+                .add_new_node(<Option<&str>>::None, None, None)
+                .ok()
+                .unwrap();
 
             let path = self.path(&node_id, &left_id);
-            let brl_new_out: TreeFloat = self.branch_length(node_id).unwrap_or_default() / 2e0;
+            let brl_new_out: TreeFloat =
+                self.branch_length(node_id).unwrap_or_default() / 2e0;
             // println!("{node_id}:{brl_new_out} <- new out");
             if self.has_branch_lengths {
                 self.nodes[node_id].set_branch_length(Some(brl_new_out));
@@ -139,8 +144,10 @@ impl Tree {
             }
 
             // println!("NEW LAST:{prev_brl} {prev_par} <- new last");
-            let new_last =
-                self.add_new_node(new_node_name.as_deref(), None, Some(prev_par)).ok().unwrap();
+            let new_last = self
+                .add_new_node(new_node_name.as_deref(), None, Some(prev_par))
+                .ok()
+                .unwrap();
 
             if self.has_branch_lengths {
                 self.nodes[new_last].set_branch_length(Some(prev_brl));
@@ -158,7 +165,7 @@ impl Tree {
                     self.nodes[id].set_parent_id(Some(new_last));
                 }
             }
-            self.nodes.remove(left_id);
+            _ = self.nodes.remove(left_id);
         }
         self.edges = None;
         self.validate(true)
@@ -182,7 +189,10 @@ impl Tree {
         rv
     }
 
-    pub fn node_id_by_name<'a>(&self, name: impl Into<&'a str>) -> Option<NodeId> {
+    pub fn node_id_by_name<'a>(
+        &self,
+        name: impl Into<&'a str>,
+    ) -> Option<NodeId> {
         let name: &str = name.into();
         self.nodes.iter().find_map(|(node_id, node)| {
             if let Some(node_name) = node.name() {
@@ -198,20 +208,20 @@ impl Tree {
         if let Some(node_to_drop_id) = self.pick_node_to_drop_before_unroot() {
             self.slide_brlen_through_root(node_to_drop_id);
             yanked_node = self.node(Some(node_to_drop_id)).cloned();
-            self.yank_node(&node_to_drop_id);
+            self.yank_node(node_to_drop_id);
             self.edges = None;
             let _ = self.validate(true);
         }
         yanked_node
     }
 
-    fn yank_node(&mut self, node_id: &NodeId) {
-        let child_ids = self.child_ids(node_id).to_vec();
-        if let Some(parent_node_id) = self.nodes[*node_id].parent_id() {
+    fn yank_node(&mut self, node_id: NodeId) {
+        let child_ids = self.child_ids(&node_id).to_vec();
+        if let Some(parent_node_id) = self.nodes[node_id].parent_id() {
             let parent_node_id: NodeId = *parent_node_id;
             let parent = self.nodes.get_mut(parent_node_id).unwrap();
 
-            parent.remove_child_id(node_id);
+            parent.remove_child_id(&node_id);
 
             for &child_id in &child_ids {
                 parent.add_child_id(child_id);
@@ -222,7 +232,7 @@ impl Tree {
                 child.set_parent_id(Some(parent_node_id));
             }
 
-            self.nodes.remove(*node_id);
+            _ = self.nodes.remove(node_id);
         }
     }
 
@@ -234,7 +244,7 @@ impl Tree {
         let mut receive_node_id: NodeId = source_node_id;
         for &other_id in self.child_ids(&self.first_node_id.unwrap()) {
             if other_id != source_node_id {
-                receive_node_id = other_id
+                receive_node_id = other_id;
             }
         }
 
@@ -246,9 +256,9 @@ impl Tree {
         let mut new_brlen: TreeFloat = 0e0;
         if let Some(source_brlen) = source_node.branch_length() {
             if let Some(receive_brlen) = receive_node.branch_length() {
-                new_brlen = receive_brlen + source_brlen
+                new_brlen = receive_brlen + source_brlen;
             } else {
-                new_brlen = source_brlen
+                new_brlen = source_brlen;
             }
         }
 
@@ -311,14 +321,18 @@ impl Tree {
         let cs: &[NodeId] = self.child_ids(node_id);
         let mut rv: Vec<NodeId> = Vec::new();
         if self.is_tip(node_id) {
-            rv.push(*node_id)
+            rv.push(*node_id);
         }
         cs.iter().for_each(|c| rv.append(&mut self.tip_node_ids(c)));
         rv
     }
 
     pub fn tip_node_ids_all(&self) -> Vec<NodeId> {
-        if let Some(id) = self.first_node_id { self.tip_node_ids(&id) } else { Vec::new() }
+        if let Some(id) = self.first_node_id {
+            self.tip_node_ids(&id)
+        } else {
+            Vec::new()
+        }
     }
 
     pub fn height(&self) -> TreeFloat {
@@ -327,7 +341,7 @@ impl Tree {
             for right in &self.tip_node_ids_all() {
                 let curr = self.dist(id, right);
                 if curr > h {
-                    h = curr
+                    h = curr;
                 }
             }
         }
@@ -361,7 +375,7 @@ impl Tree {
         let mut rv: usize = self.child_count(node_id);
 
         for child_id in self.child_ids(node_id) {
-            rv += self.child_count_recursive(child_id)
+            rv += self.child_count_recursive(child_id);
         }
 
         rv
@@ -376,8 +390,8 @@ impl Tree {
     }
 
     pub fn sort(&mut self, reverse: bool) {
-        if let Some(id) = self.first_node_id {
-            self.sort_nodes(&id, reverse);
+        if let Some(node_id) = self.first_node_id {
+            self.sort_nodes(node_id, reverse);
             self.edges = None;
             self.make_fresh_edges();
         }
@@ -408,22 +422,27 @@ impl Tree {
         tmp
     }
 
-    fn sort_nodes(&mut self, node_id: &NodeId, reverse: bool) {
-        let mut sorted_ids: Vec<NodeId> = self.nodes[*node_id].child_ids().to_vec();
+    fn sort_nodes(&mut self, node_id: NodeId, reverse: bool) {
+        let mut sorted_ids: Vec<NodeId> =
+            self.nodes[node_id].child_ids().to_vec();
         sorted_ids.par_sort_by_key(|c| self.child_count_recursive(c));
         if reverse {
             sorted_ids.reverse();
         }
         for &id in &sorted_ids {
-            self.sort_nodes(&id, reverse);
+            self.sort_nodes(id, reverse);
         }
-        self.nodes[*node_id].set_child_ids(sorted_ids);
+        self.nodes[node_id].set_child_ids(sorted_ids);
     }
 
     pub fn tip_count_recursive(&self, node_id: &NodeId) -> usize {
         let mut rv: usize = 0;
         for child_id in self.child_ids(node_id) {
-            if !self.is_tip(child_id) { rv += self.tip_count_recursive(child_id) } else { rv += 1 }
+            if !self.is_tip(child_id) {
+                rv += self.tip_count_recursive(child_id);
+            } else {
+                rv += 1;
+            }
         }
         rv
     }
@@ -432,7 +451,7 @@ impl Tree {
         let mut rv: usize = 0;
         for child_node in self.children(node_id) {
             if child_node.is_tip() {
-                rv += 1
+                rv += 1;
             }
         }
         rv
@@ -485,30 +504,44 @@ impl Tree {
     }
 
     pub fn bounding_tip_ids_for_clade<'a>(
-        &'a self, node_id: &'a NodeId,
+        &'a self,
+        node_id: &'a NodeId,
     ) -> (&'a NodeId, &'a NodeId) {
-        (self.first_tip_id_for_clade(node_id), self.last_tip_id_for_clade(node_id))
+        (
+            self.first_tip_id_for_clade(node_id),
+            self.last_tip_id_for_clade(node_id),
+        )
     }
 
-    pub fn first_tip_id_for_clade<'a>(&'a self, node_id: &'a NodeId) -> &'a NodeId {
+    pub fn first_tip_id_for_clade<'a>(
+        &'a self,
+        node_id: &'a NodeId,
+    ) -> &'a NodeId {
         match self.first_child_id(node_id) {
             Some(child_id) => self.first_tip_id_for_clade(child_id),
             None => node_id,
         }
     }
 
-    pub fn last_tip_id_for_clade<'a>(&'a self, node_id: &'a NodeId) -> &'a NodeId {
+    pub fn last_tip_id_for_clade<'a>(
+        &'a self,
+        node_id: &'a NodeId,
+    ) -> &'a NodeId {
         match self.last_child_id(node_id) {
             Some(child_id) => self.last_tip_id_for_clade(child_id),
             None => node_id,
         }
     }
 
-    pub fn bounding_tip_edges_for_clade(&self, node_id: &NodeId) -> Option<(&Edge, &Edge)> {
+    pub fn bounding_tip_edges_for_clade(
+        &self,
+        node_id: &NodeId,
+    ) -> Option<(&Edge, &Edge)> {
         if self.node_exists(Some(*node_id))
             && let Some(edges) = self.edges()
         {
-            let (&tip_id_0, &tip_id_1) = self.bounding_tip_ids_for_clade(node_id);
+            let (&tip_id_0, &tip_id_1) =
+                self.bounding_tip_ids_for_clade(node_id);
 
             let start: &Edge = &edges[self.edge_idx_for_node_id(tip_id_0)?];
             let end: &Edge = &edges[self.edge_idx_for_node_id(tip_id_1)?];
@@ -529,7 +562,9 @@ impl Tree {
     }
 
     pub fn add_new_node<'a>(
-        &mut self, name: Option<impl Into<&'a str>>, branch_length: Option<TreeFloat>,
+        &mut self,
+        name: Option<impl Into<&'a str>>,
+        branch_length: Option<TreeFloat>,
         parent_node_id: Option<NodeId>,
     ) -> Result<NodeId, TreeError> {
         let mut node: Node = Node::default();
@@ -539,7 +574,9 @@ impl Tree {
     }
 
     pub fn add_node(
-        &mut self, node: Node, parent_node_id: Option<NodeId>,
+        &mut self,
+        node: Node,
+        parent_node_id: Option<NodeId>,
     ) -> Result<NodeId, TreeError> {
         let nodes: Vec<Node> = vec![node];
         let rslt = self.add_nodes(nodes, parent_node_id);
@@ -550,7 +587,9 @@ impl Tree {
     }
 
     pub fn add_nodes(
-        &mut self, nodes: impl Into<Vec<Node>>, parent_node_id: Option<NodeId>,
+        &mut self,
+        nodes: impl Into<Vec<Node>>,
+        parent_node_id: Option<NodeId>,
     ) -> Result<Vec<NodeId>, TreeError> {
         let mut nodes: Vec<Node> = nodes.into().to_vec();
 
@@ -588,7 +627,11 @@ impl Tree {
     }
 
     pub fn node_mut(&mut self, node_id: Option<NodeId>) -> Option<&mut Node> {
-        if let Some(node_id) = node_id { self.nodes.get_mut(node_id) } else { None }
+        if let Some(node_id) = node_id {
+            self.nodes.get_mut(node_id)
+        } else {
+            None
+        }
     }
 
     pub fn node_exists(&self, node_id: Option<NodeId>) -> bool {
@@ -606,7 +649,10 @@ impl Tree {
         false
     }
 
-    pub fn validate(&mut self, make_fresh_edges: bool) -> Result<NodeId, TreeError> {
+    pub fn validate(
+        &mut self,
+        make_fresh_edges: bool,
+    ) -> Result<NodeId, TreeError> {
         // let mut count_of_unset: usize = 0;
         let mut count_of_tip: usize = 0;
         let mut count_of_internal: usize = 0;
@@ -627,18 +673,20 @@ impl Tree {
                 NodeType::FirstNode => {
                     count_of_first += 1;
                     if let Some(node_id) = node.node_id() {
-                        self.first_node_id = Some(*node_id)
+                        self.first_node_id = Some(*node_id);
                     }
                 }
                 NodeType::Root => {
                     count_of_root += 1;
                     if let Some(node_id) = node.node_id() {
-                        self.first_node_id = Some(*node_id)
+                        self.first_node_id = Some(*node_id);
                     }
                 }
             };
 
-            if node.node_type() != NodeType::FirstNode && node.node_type() != NodeType::Root {
+            if node.node_type() != NodeType::FirstNode
+                && node.node_type() != NodeType::Root
+            {
                 match node.branch_length() {
                     Some(_) => has_branch_lengths = true,
                     None => has_branch_lengths = false,
@@ -666,7 +714,8 @@ impl Tree {
         // }
 
         self.tip_count_all = count_of_tip;
-        self.internal_node_count_all = count_of_internal + count_of_first + count_of_root;
+        self.internal_node_count_all =
+            count_of_internal + count_of_first + count_of_root;
         self.node_count_all = self.tip_count_all + self.internal_node_count_all;
 
         self.has_branch_lengths = has_branch_lengths;
@@ -714,8 +763,16 @@ impl Tree {
             } else {
                 "None".to_string()
             },
-            if let Some(name) = &node.name() { name.to_string() } else { "None".to_string() },
-            if let Some(brlen) = node.branch_length() { brlen } else { TreeFloat::NAN },
+            if let Some(name) = &node.name() {
+                name.to_string()
+            } else {
+                "None".to_string()
+            },
+            if let Some(brlen) = node.branch_length() {
+                brlen
+            } else {
+                TreeFloat::NAN
+            },
             node.node_type()
         ));
 

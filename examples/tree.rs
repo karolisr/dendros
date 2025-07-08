@@ -14,20 +14,26 @@ fn main() {
 
     tree.sort(true);
 
-    tree.unroot();
+    _ = tree.unroot();
     let _ = tree.root(tip_1_id.unwrap());
 
     assert!(tree.validate(true).is_ok());
 
     let first_node_id = &tree.first_node_id().unwrap();
 
-    println!("child_count: {first_node_id} {}", tree.child_count(first_node_id));
+    println!(
+        "child_count: {first_node_id} {}",
+        tree.child_count(first_node_id)
+    );
     println!(
         "child_count_recursive: {first_node_id} {}",
         tree.child_count_recursive(first_node_id)
     );
     println!("tip_count: {first_node_id} {}", tree.tip_count(first_node_id));
-    println!("tip_count_recursive: {first_node_id} {}", tree.tip_count_recursive(first_node_id));
+    println!(
+        "tip_count_recursive: {first_node_id} {}",
+        tree.tip_count_recursive(first_node_id)
+    );
 
     println!("\n{tree}");
 }

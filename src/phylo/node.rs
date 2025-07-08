@@ -39,7 +39,7 @@ impl Node {
     }
 
     pub(super) fn set_child_ids(&mut self, child_ids: Vec<NodeId>) {
-        self.child_ids = child_ids
+        self.child_ids = child_ids;
     }
 
     pub fn child_node_count(&self) -> usize {
@@ -47,7 +47,7 @@ impl Node {
     }
 
     pub fn add_child_id(&mut self, node_id: NodeId) {
-        self.child_ids.push(node_id)
+        self.child_ids.push(node_id);
     }
 
     pub fn add_child_ids<'a>(&mut self, node_ids: impl Into<&'a [NodeId]>) {
@@ -57,7 +57,7 @@ impl Node {
     pub fn remove_child_id(&mut self, node_id: &NodeId) {
         let idx = self.child_ids.iter().position(|id| id == node_id);
         if let Some(idx) = idx {
-            self.child_ids.swap_remove(idx);
+            _ = self.child_ids.swap_remove(idx);
         }
     }
 
@@ -113,13 +113,13 @@ impl Node {
 
     pub fn set_node_type(&mut self) -> NodeType {
         if self.child_ids.len() >= 2 && self.parent_id.is_some() {
-            self.node_type = NodeType::Internal
+            self.node_type = NodeType::Internal;
         } else if self.child_ids.is_empty() && self.parent_id.is_some() {
-            self.node_type = NodeType::Tip
+            self.node_type = NodeType::Tip;
         } else if self.child_ids.len() >= 3 && self.parent_id.is_none() {
-            self.node_type = NodeType::FirstNode
+            self.node_type = NodeType::FirstNode;
         } else if self.child_ids.len() == 2 && self.parent_id.is_none() {
-            self.node_type = NodeType::Root
+            self.node_type = NodeType::Root;
         }
         self.node_type
     }
