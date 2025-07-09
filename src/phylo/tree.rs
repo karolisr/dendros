@@ -537,19 +537,53 @@ impl Tree {
         &self,
         node_id: &NodeId,
     ) -> Option<(&Edge, &Edge)> {
-        if self.node_exists(Some(*node_id))
-            && let Some(edges) = self.edges()
-        {
-            let (&tip_id_0, &tip_id_1) =
-                self.bounding_tip_ids_for_clade(node_id);
-
-            let start: &Edge = &edges[self.edge_idx_for_node_id(tip_id_0)?];
-            let end: &Edge = &edges[self.edge_idx_for_node_id(tip_id_1)?];
-
-            Some((start, end))
-        } else {
-            None
+        if !self.node_exists(Some(*node_id)) {
+            return None;
         }
+
+        let edges = self.edges()?;
+        let (&tip_id_0, &tip_id_1) = self.bounding_tip_ids_for_clade(node_id);
+        let start: &Edge = &edges[self.edge_idx_for_node_id(tip_id_0)?];
+        let end: &Edge = &edges[self.edge_idx_for_node_id(tip_id_1)?];
+
+        Some((start, end))
+    }
+
+    pub fn bounding_edges_for_clade(
+        &self,
+        node_id: &NodeId,
+    ) -> Option<(Vec<Edge>, Vec<Edge>)> {
+        if !self.node_exists(Some(*node_id)) {
+            return None;
+        }
+
+        let edges = self.edges()?;
+
+        let (top_tip_id, bottom_tip_id) =
+            self.bounding_tip_ids_for_clade(node_id);
+
+        let mut edges_top: Vec<Edge> = Vec::new();
+        let mut edges_bottom: Vec<Edge> = Vec::new();
+
+        let path_top = self.path(top_tip_id, node_id);
+        let path_bottom = self.path(bottom_tip_id, node_id);
+
+        edges_top.push(edges[self.edge_idx_for_node_id(*top_tip_id)?].clone());
+
+        for id in path_top {
+            let edge = &edges[self.edge_idx_for_node_id(id)?];
+            edges_top.push(edge.clone());
+        }
+
+        for &id in path_bottom.iter().rev() {
+            let edge = &edges[self.edge_idx_for_node_id(id)?];
+            edges_bottom.push(edge.clone());
+        }
+
+        edges_bottom
+            .push(edges[self.edge_idx_for_node_id(*bottom_tip_id)?].clone());
+
+        Some((edges_top, edges_bottom))
     }
 
     pub fn children(&self, node_id: &NodeId) -> Vec<&Node> {
