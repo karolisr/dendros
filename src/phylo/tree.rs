@@ -30,6 +30,10 @@ pub enum TreeError {
 }
 
 impl Tree {
+    pub fn node_ids_all(&self) -> Vec<NodeId> {
+        self.nodes.keys().collect()
+    }
+
     pub fn has_tip_labels(&self) -> bool {
         for n in self.nodes.values() {
             if n.is_tip() && n.name().is_some() {
