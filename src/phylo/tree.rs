@@ -36,7 +36,7 @@ impl Tree {
 
     pub fn has_tip_labels(&self) -> bool {
         for n in self.nodes.values() {
-            if n.is_tip() && n.name().is_some() {
+            if n.is_tip() && n.node_label().is_some() {
                 return true;
             }
         }
@@ -45,7 +45,7 @@ impl Tree {
 
     pub fn has_int_labels(&self) -> bool {
         for n in self.nodes.values() {
-            if !n.is_tip() && n.name().is_some() {
+            if !n.is_tip() && n.node_label().is_some() {
                 return true;
             }
         }
@@ -113,6 +113,7 @@ impl Tree {
             let path = self.path(&node_id, &left_id);
             let brl_new_out: TreeFloat =
                 self.branch_length(node_id).unwrap_or_default() / 2e0;
+            let br_props_new_out = self.branch_props(node_id);
             // println!("{node_id}:{brl_new_out} <- new out");
             if self.has_branch_lengths {
                 self.nodes[node_id].set_branch_length(Some(brl_new_out));
@@ -125,24 +126,31 @@ impl Tree {
             // println!("---");
 
             let mut prev_brl = brl_new_out;
+            let mut prev_br_props = br_props_new_out;
             let mut prev_par = new_root_id;
             for &id in &path {
                 // println!("{id}:{prev_brl} {prev_par} <- to reverse");
                 let brl_tmp = self.branch_length(id).unwrap_or_default();
+                let br_props_tmp = self.branch_props(id);
                 if self.has_branch_lengths {
                     self.nodes[id].set_branch_length(Some(prev_brl));
                 }
+                self.nodes[id].set_branch_props(prev_br_props);
                 self.nodes[prev_par].add_child_id(id);
                 self.nodes[id].set_parent_id(Some(prev_par));
                 self.nodes[id].remove_child_id(&prev_par);
                 self.nodes[id].remove_child_id(&node_id);
+                prev_br_props = br_props_tmp;
                 prev_brl = brl_tmp;
                 prev_par = id;
             }
 
-            let mut new_node_name: Option<String> = None;
+            let mut new_node_name: Option<String> = self.nodes[left_id]
+                .node_label()
+                .map(|node_label| node_label.to_string());
+
             if let Some(yanked_node) = yanked_node
-                && let Some(name) = yanked_node.name()
+                && let Some(name) = yanked_node.node_label()
             {
                 new_node_name = Some(name.to_string());
             }
@@ -156,6 +164,8 @@ impl Tree {
             if self.has_branch_lengths {
                 self.nodes[new_last].set_branch_length(Some(prev_brl));
             }
+
+            self.nodes[new_last].set_branch_props(prev_br_props);
 
             let id_to_ignore: NodeId =
                 if !path.is_empty() { path[path.len() - 1] } else { node_id };
@@ -199,7 +209,7 @@ impl Tree {
     ) -> Option<NodeId> {
         let name: &str = name.into();
         self.nodes.iter().find_map(|(node_id, node)| {
-            if let Some(node_name) = node.name() {
+            if let Some(node_name) = node.node_label() {
                 if node_name == name.into() { Some(node_id) } else { None }
             } else {
                 None
@@ -465,6 +475,10 @@ impl Tree {
         Self::default()
     }
 
+    pub fn branch_props(&self, node_id: NodeId) -> Vec<String> {
+        self.nodes[node_id].branch_props()
+    }
+
     pub fn branch_length(&self, node_id: NodeId) -> Option<TreeFloat> {
         if self.has_branch_lengths {
             self.nodes[node_id].branch_length()
@@ -488,7 +502,7 @@ impl Tree {
     }
 
     pub fn name(&self, node_id: &NodeId) -> Option<Arc<str>> {
-        self.nodes[*node_id].name()
+        self.nodes[*node_id].node_label()
     }
 
     pub fn parent_id(&self, node_id: &NodeId) -> Option<&NodeId> {
@@ -606,7 +620,7 @@ impl Tree {
         parent_node_id: Option<NodeId>,
     ) -> Result<NodeId, TreeError> {
         let mut node: Node = Node::default();
-        node.set_name(name);
+        node.set_node_label(name);
         node.set_branch_length(branch_length);
         self.add_node(node, parent_node_id)
     }
@@ -801,7 +815,7 @@ impl Tree {
             } else {
                 "None".to_string()
             },
-            if let Some(name) = &node.name() {
+            if let Some(name) = &node.node_label() {
                 name.to_string()
             } else {
                 "None".to_string()

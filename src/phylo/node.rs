@@ -20,7 +20,9 @@ pub struct Node {
     parent_id: Option<NodeId>,
     child_ids: Vec<NodeId>,
     branch_length: Option<TreeFloat>,
-    name: Option<Arc<str>>,
+    node_label: Option<Arc<str>>,
+    node_props: Vec<String>,
+    branch_props: Vec<String>,
     node_type: NodeType,
     edge_idx: Option<usize>,
 }
@@ -28,6 +30,38 @@ pub struct Node {
 impl Node {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn node_props(&self) -> Vec<String> {
+        self.node_props.clone()
+    }
+
+    pub fn set_node_props(&mut self, node_props: Vec<String>) {
+        self.node_props = node_props;
+    }
+
+    pub fn branch_props(&self) -> Vec<String> {
+        self.branch_props.clone()
+    }
+
+    pub fn set_branch_props(&mut self, branch_props: Vec<String>) {
+        self.branch_props = branch_props;
+    }
+
+    pub fn branch_length(&self) -> Option<TreeFloat> {
+        self.branch_length
+    }
+
+    pub fn set_branch_length(&mut self, branch_length: Option<TreeFloat>) {
+        self.branch_length = branch_length;
+    }
+
+    pub fn node_label(&self) -> Option<Arc<str>> {
+        self.node_label.clone()
+    }
+
+    pub fn set_node_label<'a>(&mut self, name: Option<impl Into<&'a str>>) {
+        self.node_label = name.map(|name| name.into().into());
     }
 
     pub fn is_tip(&self) -> bool {
@@ -91,22 +125,6 @@ impl Node {
         self.parent_id = node_id;
     }
 
-    pub fn branch_length(&self) -> Option<TreeFloat> {
-        self.branch_length
-    }
-
-    pub fn set_branch_length(&mut self, branch_length: Option<TreeFloat>) {
-        self.branch_length = branch_length;
-    }
-
-    pub fn name(&self) -> Option<Arc<str>> {
-        self.name.clone()
-    }
-
-    pub fn set_name<'a>(&mut self, name: Option<impl Into<&'a str>>) {
-        self.name = name.map(|name| name.into().into());
-    }
-
     pub fn node_type(&self) -> NodeType {
         self.node_type
     }
@@ -132,7 +150,7 @@ impl From<String> for Node {
             "" => None,
             v => Some(v),
         };
-        node.set_name(name);
+        node.set_node_label(name);
         node
     }
 }
@@ -144,7 +162,7 @@ impl<'a> From<&'a str> for Node {
             "" => None,
             v => Some(v),
         };
-        node.set_name(name);
+        node.set_node_label(name);
         node
     }
 }

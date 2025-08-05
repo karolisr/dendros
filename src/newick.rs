@@ -41,7 +41,7 @@ fn _newick_string(child_nodes: Vec<&Node>, tree: &Tree) -> String {
             }
         }
 
-        if let Some(name) = child.name() {
+        if let Some(name) = child.node_label() {
             let name = name.replace(" ", "_");
             newick.push_str(&name);
         }
@@ -177,15 +177,19 @@ fn _parse_newick(s: String, parent_id: Option<NodeId>, mut tree: Tree) -> Tree {
 }
 
 fn node<'a>(name: impl Into<&'a str>) -> Node {
-    let (name, branch_length) = parse_newick_label(name);
+    let (name, branch_length, branch_lab) = parse_newick_label(name);
     let mut node = Node::default();
 
     if let Some(name) = name {
-        node.set_name(Some(name.as_str()));
+        node.set_node_label(Some(name.as_str()));
     };
 
     if let Some(branch_length) = branch_length {
         node.set_branch_length(Some(branch_length));
+    };
+
+    if let Some(branch_lab) = branch_lab {
+        node.set_branch_props(vec![branch_lab]);
     };
 
     node
@@ -206,21 +210,31 @@ fn nodes_from_string<'a>(
 }
 
 fn parse_newick_label<'a>(
-    name: impl Into<&'a str>,
-) -> (Option<String>, Option<TreeFloat>) {
-    let name: &str = name.into();
-    let (name, brln) = match name.rsplit_once(':') {
-        Some((name, brln)) => (name, brln.parse::<TreeFloat>().ok()),
-        None => (name, None),
+    label: impl Into<&'a str>,
+) -> (Option<String>, Option<TreeFloat>, Option<String>) {
+    let label: &str = label.into();
+
+    let (node_lab, brln, branch_lab) = match label.rsplit_once(':') {
+        Some((node_lab, branch)) => {
+            let (brln, branch_lab) = match branch.rsplit_once('[') {
+                Some((brln, branch_lab)) => (brln.parse::<TreeFloat>().ok(), {
+                    let mut x = "[".to_string();
+                    x.push_str(branch_lab);
+                    Some(x)
+                }),
+                None => (None, None),
+            };
+            (node_lab, brln, branch_lab)
+        }
+        None => (label, None, None),
     };
 
-    let name = match name.trim_matches(['\'', '"']) {
+    let node_lab = match node_lab.trim_matches(['\'', '"']) {
         "" => None,
-        // x => Some(x.replace("_", " ").replace("|", " ").to_string()),
         x => Some(x.to_string()),
     };
 
-    (name, brln)
+    (node_lab, brln, branch_lab)
 }
 
 fn split_multi_newick_str(s: &str) -> Vec<String> {

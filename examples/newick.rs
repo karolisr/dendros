@@ -1,6 +1,4 @@
 // use dendros::Tree;
-// use dendros::chunk_edges;
-// use dendros::flatten_tree;
 use dendros::parse_newick;
 // use dendros::write_newick;
 use std::fs::read_to_string;
@@ -23,9 +21,11 @@ fn main() {
     // let data = "(1,2,3,4,5);";
     // let data = String::from(data);
     // let data = read_to_string("tests/data/tree01.newick").unwrap();
-    let data = read_to_string("tests/data/100_starting_trees.newick").unwrap();
+    // let data = read_to_string("tests/data/100_starting_trees.newick").unwrap();
 
-    // println!("{data}");
+    let data = read_to_string("tests/data/Czech_Huerta-Cepas_Stamatakis_2017/Czech_Huerta-Cepas_Stamatakis_2017_unrooted.newick").unwrap();
+
+    println!("{data}");
 
     let trees = parse_newick(data).unwrap_or_default();
 
@@ -85,32 +85,30 @@ fn main() {
             &tree.has_branch_lengths()
         );
 
-        // let edges = flatten_tree(&tree);
-        // let chunks = chunk_edges(&edges, 1);
-        // for chunk in chunks {
-        //     println!("{}", "-".repeat(80));
-        //     for e in chunk {
-        //         println!(
-        //             "{:>8} {:>8} {:<5} {:<28} {:>.4} {:>.4} {:>.4} {}",
-        //             match e.parent_node_id {
-        //                 Some(p) => format!("{}", p),
-        //                 None => format!("{:<}", "-"),
-        //             },
-        //             format!("{}", e.node_id),
-        //             e.is_tip,
-        //             match e.name {
-        //                 Some(name) => name,
-        //                 None => "None".into(),
-        //             },
-        //             e.x0,
-        //             e.x1,
-        //             e.y,
-        //             match e.y_parent {
-        //                 Some(y_prev) => format!("{:>.4}", y_prev),
-        //                 None => format!("{:<}", "-"),
-        //             },
-        //         );
-        //     }
-        // }
+        let edges = tree.edges().unwrap();
+        println!("                  is_tip      node                      x0     x1     y   y_prev");
+        println!("{}", "-".repeat(80));
+        for e in edges {
+            println!(
+                "{:>8} {:>8} {:<5} {:<28} {:>.4} {:>.4} {:>.4} {}",
+                match e.parent_node_id {
+                    Some(p) => format!("{}", p),
+                    None => format!("{:<}", "-"),
+                },
+                format!("{}", e.node_id),
+                e.is_tip,
+                match &e.name {
+                    Some(name) => name.to_string(),
+                    None => "None".to_string(),
+                },
+                e.x0,
+                e.x1,
+                e.y,
+                match e.y_parent {
+                    Some(y_prev) => format!("{:>.4}", y_prev),
+                    None => format!("{:<}", "-"),
+                },
+            );
+        }
     }
 }
