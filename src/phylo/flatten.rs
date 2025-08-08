@@ -105,7 +105,7 @@ fn _flatten_tree(
         y,
         is_tip,
         edge_idx: 0,
-        branch_props: branch_props.to_vec()
+        branch_props,
     };
 
     edges.push(this_edge);

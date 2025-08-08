@@ -79,6 +79,7 @@ fn _parse_newick(s: String, parent_id: Option<NodeId>, mut tree: Tree) -> Tree {
     let mut n_open: i32 = 0;
     let mut is_open: bool = false;
     let mut was_open: bool = false;
+    let mut comment: bool = false;
     let mut s_iter = s.char_indices();
     while i < s.len() {
         let character: char;
@@ -93,6 +94,20 @@ fn _parse_newick(s: String, parent_id: Option<NodeId>, mut tree: Tree) -> Tree {
             i += 1;
             continue;
         }
+
+        if character == '[' {
+            comment = true;
+            continue;
+        }
+
+        if character == ']' {
+            comment = false;
+        }
+
+        if comment {
+            continue;
+        }
+
         match character {
             '(' => {
                 n_open += 1;
@@ -110,6 +125,7 @@ fn _parse_newick(s: String, parent_id: Option<NodeId>, mut tree: Tree) -> Tree {
                         Some(x) => &s[i + 1..i + 1 + x],
                         None => &s[i + 1..],
                     };
+                    println!("{label}");
                     let child_id = tree.add_node(node(label), parent_id).ok();
                     tree = _parse_newick(s[i0..i].into(), child_id, tree);
                     i += label.len();
@@ -176,12 +192,31 @@ fn _parse_newick(s: String, parent_id: Option<NodeId>, mut tree: Tree) -> Tree {
     tree
 }
 
-fn node<'a>(name: impl Into<&'a str>) -> Node {
-    let (name, branch_length, branch_lab) = parse_newick_label(name);
+fn node<'a>(newick_label: impl Into<&'a str>) -> Node {
+    let (node_lab, branch_length, branch_lab) =
+        parse_newick_label(newick_label);
+
     let mut node = Node::default();
 
-    if let Some(name) = name {
-        node.set_node_label(Some(name.as_str()));
+    if let Some(node_lab) = node_lab {
+        if let Some((a, mut b)) = node_lab.split_once("[") {
+            node.set_node_label(Some(a));
+            if b.ends_with(']') {
+                b = b.strip_suffix(']').unwrap();
+            }
+
+            let node_props: Vec<String> = b
+                .split('&')
+                .map(std::string::ToString::to_string)
+                .filter(|x| !x.is_empty())
+                .collect();
+
+            node.set_node_props(node_props);
+
+            // println!("{a}, {:?}", node_props);
+        } else {
+            node.set_node_label(Some(node_lab.as_str()));
+        }
     };
 
     if let Some(branch_length) = branch_length {
@@ -189,7 +224,19 @@ fn node<'a>(name: impl Into<&'a str>) -> Node {
     };
 
     if let Some(branch_lab) = branch_lab {
-        node.set_branch_props(vec![branch_lab]);
+        if let Some((_, mut b)) = branch_lab.split_once("[") {
+            if b.ends_with(']') {
+                b = b.strip_suffix(']').unwrap();
+            }
+
+            let branch_props: Vec<String> = b
+                .split('&')
+                .map(std::string::ToString::to_string)
+                .filter(|x| !x.is_empty())
+                .collect();
+
+            node.set_branch_props(branch_props);
+        }
     };
 
     node
@@ -214,6 +261,8 @@ fn parse_newick_label<'a>(
 ) -> (Option<String>, Option<TreeFloat>, Option<String>) {
     let label: &str = label.into();
 
+    // println!("{label}");
+
     let (node_lab, brln, branch_lab) = match label.rsplit_once(':') {
         Some((node_lab, branch)) => {
             let (brln, branch_lab) = match branch.rsplit_once('[') {
@@ -229,11 +278,12 @@ fn parse_newick_label<'a>(
         None => (label, None, None),
     };
 
-    let node_lab = match node_lab.trim_matches(['\'', '"']) {
-        "" => None,
-        x => Some(x.to_string()),
-    };
+    // let node_lab = match node_lab.trim_matches(['\'', '"']) {
+    //     "" => None,
+    //     x => Some(x.to_string()),
+    // };
 
+    let node_lab = Some(node_lab.to_string());
     (node_lab, brln, branch_lab)
 }
 

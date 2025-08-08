@@ -23,7 +23,8 @@ fn main() {
     // let data = read_to_string("tests/data/tree01.newick").unwrap();
     // let data = read_to_string("tests/data/100_starting_trees.newick").unwrap();
 
-    let data = read_to_string("tests/data/Czech_Huerta-Cepas_Stamatakis_2017/Czech_Huerta-Cepas_Stamatakis_2017_unrooted.newick").unwrap();
+    // let data = read_to_string("tests/data/Czech_Huerta-Cepas_Stamatakis_2017/Czech_Huerta-Cepas_Stamatakis_2017_unrooted.newick").unwrap();
+    let data = read_to_string("tests/data/iqtree_branch_annotations.newick").unwrap();
 
     println!("{data}");
 
@@ -86,7 +87,9 @@ fn main() {
         );
 
         let edges = tree.edges().unwrap();
-        println!("                  is_tip      node                      x0     x1     y   y_prev");
+        println!(
+            "                  is_tip      node                      x0     x1     y   y_prev"
+        );
         println!("{}", "-".repeat(80));
         for e in edges {
             println!(
