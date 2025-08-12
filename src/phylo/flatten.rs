@@ -16,6 +16,7 @@ pub struct Edge {
     pub y: TreeFloat,
     pub is_tip: bool,
     pub edge_idx: usize,
+    pub node_props: Vec<String>,
     pub branch_props: Vec<String>,
 }
 
@@ -49,6 +50,7 @@ fn _flatten_tree(
         return (edges, Vec::new());
     }
     let branch_props = tree.branch_props(node_id);
+    let node_props = tree.node_props(node_id);
     let brlen: TreeFloat = tree.branch_length(node_id).unwrap_or(0e0);
     let brlen_normalized: TreeFloat = brlen / tree_height;
     let name: Option<Arc<str>> = tree.name(&node_id);
@@ -105,7 +107,8 @@ fn _flatten_tree(
         y,
         is_tip,
         edge_idx: 0,
-        branch_props: branch_props.to_vec()
+        node_props,
+        branch_props,
     };
 
     edges.push(this_edge);

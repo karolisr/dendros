@@ -1,6 +1,6 @@
 // use dendros::Tree;
 use dendros::parse_newick;
-// use dendros::write_newick;
+use dendros::write_newick;
 use std::fs::read_to_string;
 
 fn main() {
@@ -19,10 +19,12 @@ fn main() {
     // let data = "(((Ralpest,Rbuceph,Rpictus)Polygonaceae,(Lspecta,Ltetrag)Plumbaginaceae)PP,(Dadelae,Dbinata)Droseraceae)Caryophyllales;";
     // let data = "((Lspecta,Ltetrag)Plumbaginaceae,((Dadelae,Dbinata)Droseraceae,(Ralpest,Rbuceph,Rpictus)Polygonaceae)PP);";
     // let data = "(1,2,3,4,5);";
-    // let data = String::from(data);
-    // let data = read_to_string("tests/data/tree01.newick").unwrap();
-    // let data = read_to_string("tests/data/100_starting_trees.newick").unwrap();
 
+    // let data = String::from(data);
+
+    // let data = read_to_string("tests/data/tree01.tre").unwrap();
+    // let data = read_to_string("tests/data/100_starting_trees.newick").unwrap();
+    // let data = read_to_string("tests/data/iqtree_branch_annotations.newick").unwrap();
     let data = read_to_string("tests/data/Czech_Huerta-Cepas_Stamatakis_2017/Czech_Huerta-Cepas_Stamatakis_2017_unrooted.newick").unwrap();
 
     println!("{data}");
@@ -30,12 +32,12 @@ fn main() {
     let trees = parse_newick(data).unwrap_or_default();
 
     for mut tree in trees {
-        tree.sort(false);
+        // tree.sort(false);
 
         assert!(tree.validate(false).is_ok());
 
-        // let newick_string = write_newick(&tree);
-        // println!("{newick_string}");
+        let newick_string = write_newick(&[tree.clone()]);
+        println!("{newick_string}");
 
         // let name = "IX";
         // if let Some(node_id) = tree.node_id_by_name(name) {
@@ -86,11 +88,26 @@ fn main() {
         );
 
         let edges = tree.edges().unwrap();
-        println!("                  is_tip      node                      x0     x1     y   y_prev");
-        println!("{}", "-".repeat(80));
+        println!(
+            "                  is_tip      node                                                        x0     x1     y      y_prev   node_props                   branch_props"
+        );
+        println!("{}", "-".repeat(165));
         for e in edges {
+            let node_props = tree.node_props(e.node_id);
+            let node_props_str = if node_props.is_empty() {
+                "None".to_string()
+            } else {
+                node_props.join(";")
+            };
+
+            let branch_props_str = if e.branch_props.is_empty() {
+                "None".to_string()
+            } else {
+                e.branch_props.join(";")
+            };
+
             println!(
-                "{:>8} {:>8} {:<5} {:<28} {:>.4} {:>.4} {:>.4} {}",
+                "{:>8} {:>8} {:<5} {:<65} {:>.4} {:>.4} {:>.4} {:<8} {:<28} {}",
                 match e.parent_node_id {
                     Some(p) => format!("{}", p),
                     None => format!("{:<}", "-"),
@@ -108,6 +125,8 @@ fn main() {
                     Some(y_prev) => format!("{:>.4}", y_prev),
                     None => format!("{:<}", "-"),
                 },
+                node_props_str,
+                branch_props_str,
             );
         }
     }
