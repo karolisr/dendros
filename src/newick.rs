@@ -16,12 +16,21 @@ fn newick_string(tree: &Tree) -> String {
     if let Some(first_node_id) = &tree.first_node_id() {
         let children = tree.children(first_node_id);
         let mut newick = _newick_string(children, tree);
+
         if let Some(name) = tree.name(first_node_id) {
             let name = name.replace(" ", "_");
-            newick = format!("({newick}){name};");
+            newick = format!("({newick}){name}");
         } else {
-            newick = format!("({newick});");
+            newick = format!("({newick})");
         }
+
+        let node_props = tree.node_props(*first_node_id);
+        if !node_props.is_empty() {
+            let props_str = node_props.join(",");
+            newick.push_str(&format!("[&{props_str}]"));
+        }
+
+        newick.push(';');
         newick.replace(",)", ")")
     } else {
         String::new()
@@ -46,8 +55,24 @@ fn _newick_string(child_nodes: Vec<&Node>, tree: &Tree) -> String {
             newick.push_str(&name);
         }
 
+        if let Some(child_id) = child.node_id() {
+            let node_props = tree.node_props(*child_id);
+            if !node_props.is_empty() {
+                let props_str = node_props.join(",");
+                newick.push_str(&format!("[&{props_str}]"));
+            }
+        }
+
         if let Some(brlen) = child.branch_length() {
             newick.push_str(&format!(":{brlen}"));
+        }
+
+        if let Some(child_id) = child.node_id() {
+            let branch_props = tree.branch_props(*child_id);
+            if !branch_props.is_empty() {
+                let props_str = branch_props.join(",");
+                newick.push_str(&format!("[&{props_str}]"));
+            }
         }
 
         newick.push(',');
@@ -73,13 +98,31 @@ pub fn parse_newick(s: String) -> Option<Vec<Tree>> {
     Some(rv)
 }
 
+fn find_label_end(s: &str) -> usize {
+    let mut bracket_depth = 0;
+    let mut quote_depth = 0;
+
+    for (i, c) in s.char_indices() {
+        match c {
+            '[' if quote_depth == 0 => bracket_depth += 1,
+            ']' if quote_depth == 0 => bracket_depth -= 1,
+            '"' => quote_depth = (quote_depth + 1) % 2,
+            ';' | '(' if bracket_depth == 0 && quote_depth == 0 => return i,
+            ',' if bracket_depth == 0 && quote_depth == 0 => return i,
+            _ => {}
+        }
+    }
+
+    s.len()
+}
+
 fn _parse_newick(s: String, parent_id: Option<NodeId>, mut tree: Tree) -> Tree {
     let mut i: usize = 0;
     let mut i0: usize = 0;
     let mut n_open: i32 = 0;
     let mut is_open: bool = false;
     let mut was_open: bool = false;
-    let mut comment: bool = false;
+    // let mut comment: bool = false;
     let mut s_iter = s.char_indices();
     while i < s.len() {
         let character: char;
@@ -92,19 +135,6 @@ fn _parse_newick(s: String, parent_id: Option<NodeId>, mut tree: Tree) -> Tree {
             }
         } else {
             i += 1;
-            continue;
-        }
-
-        if character == '[' {
-            comment = true;
-            continue;
-        }
-
-        if character == ']' {
-            comment = false;
-        }
-
-        if comment {
             continue;
         }
 
@@ -121,11 +151,8 @@ fn _parse_newick(s: String, parent_id: Option<NodeId>, mut tree: Tree) -> Tree {
                 n_open -= 1;
                 if is_open && n_open == 0 {
                     is_open = false;
-                    let label = match s[i + 1..].find([';', ',', '(']) {
-                        Some(x) => &s[i + 1..i + 1 + x],
-                        None => &s[i + 1..],
-                    };
-                    println!("{label}");
+                    let label_end = find_label_end(&s[i + 1..]);
+                    let label = &s[i + 1..i + 1 + label_end];
                     let child_id = tree.add_node(node(label), parent_id).ok();
                     tree = _parse_newick(s[i0..i].into(), child_id, tree);
                     i += label.len();
@@ -193,29 +220,40 @@ fn _parse_newick(s: String, parent_id: Option<NodeId>, mut tree: Tree) -> Tree {
 }
 
 fn node<'a>(newick_label: impl Into<&'a str>) -> Node {
-    let (node_lab, branch_length, branch_lab) =
+    let (node_lab, branch_length, branch_attrs) =
         parse_newick_label(newick_label);
 
     let mut node = Node::default();
 
     if let Some(node_lab) = node_lab {
-        if let Some((a, mut b)) = node_lab.split_once("[") {
-            node.set_node_label(Some(a));
-            if b.ends_with(']') {
-                b = b.strip_suffix(']').unwrap();
+        if let Some((label, mut attrs)) = node_lab.split_once("[") {
+            let trimmed_label = label.trim();
+            if !trimmed_label.is_empty() {
+                node.set_node_label(Some(trimmed_label));
             }
 
-            let node_props: Vec<String> = b
-                .split('&')
-                .map(std::string::ToString::to_string)
-                .filter(|x| !x.is_empty())
-                .collect();
+            if attrs.ends_with(']') {
+                attrs = attrs.strip_suffix(']').unwrap();
+            }
 
-            node.set_node_props(node_props);
+            let attrs_content =
+                if let Some(attrs_stripped) = attrs.strip_prefix('&') {
+                    attrs_stripped
+                } else {
+                    attrs
+                };
 
-            // println!("{a}, {:?}", node_props);
+            let node_props: Vec<String> =
+                split_comma_separated_attributes(attrs_content);
+
+            if !node_props.is_empty() {
+                node.set_node_props(node_props);
+            }
         } else {
-            node.set_node_label(Some(node_lab.as_str()));
+            let trimmed_label = node_lab.trim();
+            if !trimmed_label.is_empty() {
+                node.set_node_label(Some(trimmed_label));
+            }
         }
     };
 
@@ -223,18 +261,18 @@ fn node<'a>(newick_label: impl Into<&'a str>) -> Node {
         node.set_branch_length(Some(branch_length));
     };
 
-    if let Some(branch_lab) = branch_lab {
-        if let Some((_, mut b)) = branch_lab.split_once("[") {
-            if b.ends_with(']') {
-                b = b.strip_suffix(']').unwrap();
-            }
+    if let Some(branch_attrs) = branch_attrs {
+        let branch_attrs_content =
+            if let Some(attrs_stripped) = branch_attrs.strip_prefix('&') {
+                attrs_stripped
+            } else {
+                &branch_attrs
+            };
 
-            let branch_props: Vec<String> = b
-                .split('&')
-                .map(std::string::ToString::to_string)
-                .filter(|x| !x.is_empty())
-                .collect();
+        let branch_props: Vec<String> =
+            split_comma_separated_attributes(branch_attrs_content);
 
+        if !branch_props.is_empty() {
             node.set_branch_props(branch_props);
         }
     };
@@ -252,8 +290,83 @@ fn nodes_from_string<'a>(
 ) -> Vec<Node> {
     let s: &str = s.into();
     let sep: &str = sep.into();
-    let nds: Vec<&str> = s.split(sep).collect();
-    nodes(nds)
+
+    if sep == "," {
+        let nds = split_respecting_brackets(s, ',');
+        nodes(nds)
+    } else {
+        let nds: Vec<&str> = s.split(sep).collect();
+        nodes(nds)
+    }
+}
+
+fn split_comma_separated_attributes(s: &str) -> Vec<String> {
+    let mut result = Vec::new();
+    let mut current = String::new();
+    let mut quote_depth = 0;
+    let mut bracket_depth = 0;
+
+    for c in s.chars() {
+        match c {
+            '"' => {
+                quote_depth = (quote_depth + 1) % 2;
+                current.push(c);
+            }
+            '[' if quote_depth == 0 => {
+                bracket_depth += 1;
+                current.push(c);
+            }
+            ']' if quote_depth == 0 => {
+                bracket_depth -= 1;
+                current.push(c);
+            }
+            ',' if quote_depth == 0 && bracket_depth == 0 => {
+                let trimmed = current.trim().to_string();
+                if !trimmed.is_empty() {
+                    result.push(trimmed);
+                }
+                current.clear();
+            }
+            _ => {
+                current.push(c);
+            }
+        }
+    }
+
+    let trimmed = current.trim().to_string();
+    if !trimmed.is_empty() {
+        result.push(trimmed);
+    }
+
+    result
+}
+
+fn split_respecting_brackets(s: &str, delimiter: char) -> Vec<&str> {
+    let mut result = Vec::new();
+    let mut bracket_depth = 0;
+    let mut quote_depth = 0;
+    let mut start = 0;
+
+    for (i, c) in s.char_indices() {
+        match c {
+            '[' if quote_depth == 0 => bracket_depth += 1,
+            ']' if quote_depth == 0 => bracket_depth -= 1,
+            '"' => quote_depth = (quote_depth + 1) % 2,
+            c if c == delimiter && bracket_depth == 0 && quote_depth == 0 => {
+                if start < i {
+                    result.push(&s[start..i]);
+                }
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+
+    if start < s.len() {
+        result.push(&s[start..]);
+    }
+
+    result
 }
 
 fn parse_newick_label<'a>(
@@ -261,30 +374,55 @@ fn parse_newick_label<'a>(
 ) -> (Option<String>, Option<TreeFloat>, Option<String>) {
     let label: &str = label.into();
 
-    // println!("{label}");
+    // case where there are no attributes or branch length
+    if !label.contains(':') && !label.contains('[') {
+        return (Some(label.to_string()), None, None);
+    }
 
-    let (node_lab, brln, branch_lab) = match label.rsplit_once(':') {
-        Some((node_lab, branch)) => {
-            let (brln, branch_lab) = match branch.rsplit_once('[') {
-                Some((brln, branch_lab)) => (brln.parse::<TreeFloat>().ok(), {
-                    let mut x = "[".to_string();
-                    x.push_str(branch_lab);
-                    Some(x)
-                }),
-                None => (None, None),
-            };
-            (node_lab, brln, branch_lab)
-        }
-        None => (label, None, None),
+    // split on ':' to separate node info from branch info
+    let (node_part, branch_part) = match label.rsplit_once(':') {
+        Some((node_part, branch_part)) => (node_part, Some(branch_part)),
+        None => (label, None),
     };
 
-    // let node_lab = match node_lab.trim_matches(['\'', '"']) {
-    //     "" => None,
-    //     x => Some(x.to_string()),
-    // };
+    // parse node label (everything before ':')
+    let node_lab =
+        if node_part.is_empty() { None } else { Some(node_part.to_string()) };
 
-    let node_lab = Some(node_lab.to_string());
-    (node_lab, brln, branch_lab)
+    let (branch_length, branch_attrs) = if let Some(branch_part) = branch_part {
+        // check if branch part contains attributes [...]
+        if let Some(bracket_start) = branch_part.find('[') {
+            // split branch length from attributes
+            let brlen_str = &branch_part[..bracket_start];
+            let attrs_str = &branch_part[bracket_start..];
+
+            let branch_length = if brlen_str.is_empty() {
+                None
+            } else {
+                brlen_str.parse::<TreeFloat>().ok()
+            };
+
+            // extract attribute content (remove surrounding brackets)
+            let branch_attrs = if attrs_str.starts_with('[')
+                && attrs_str.ends_with(']')
+            {
+                let inner = &attrs_str[1..attrs_str.len() - 1];
+                if inner.is_empty() { None } else { Some(inner.to_string()) }
+            } else {
+                None
+            };
+
+            (branch_length, branch_attrs)
+        } else {
+            // no attributes, just branch length
+            let branch_length = branch_part.parse::<TreeFloat>().ok();
+            (branch_length, None)
+        }
+    } else {
+        (None, None)
+    };
+
+    (node_lab, branch_length, branch_attrs)
 }
 
 fn split_multi_newick_str(s: &str) -> Vec<String> {

@@ -479,6 +479,10 @@ impl Tree {
         self.nodes[node_id].branch_props()
     }
 
+    pub fn node_props(&self, node_id: NodeId) -> Vec<String> {
+        self.nodes[node_id].node_props()
+    }
+
     pub fn branch_length(&self, node_id: NodeId) -> Option<TreeFloat> {
         if self.has_branch_lengths {
             self.nodes[node_id].branch_length()
