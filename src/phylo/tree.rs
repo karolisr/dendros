@@ -4,6 +4,8 @@ use super::flatten_tree;
 use super::node::{Node, NodeId, NodeType};
 use rayon::prelude::*;
 use slotmap::SlotMap;
+use std::collections::HashMap;
+use std::collections::HashSet;
 use std::fmt::Display;
 use std::sync::Arc;
 use thiserror::Error;
@@ -475,12 +477,44 @@ impl Tree {
         Self::default()
     }
 
-    pub fn branch_props(&self, node_id: NodeId) -> Vec<String> {
+    pub fn branch_props(&self, node_id: NodeId) -> HashMap<String, String> {
         self.nodes[node_id].branch_props()
     }
 
-    pub fn node_props(&self, node_id: NodeId) -> Vec<String> {
+    pub fn node_props(&self, node_id: NodeId) -> HashMap<String, String> {
         self.nodes[node_id].node_props()
+    }
+
+    pub fn branch_prop_keys(&self) -> Vec<String> {
+        let mut rv: HashSet<String> = HashSet::new();
+        for n in self.nodes.values() {
+            let prop_keys: HashSet<String> = HashSet::from_iter(
+                self.branch_props(*n.node_id().unwrap())
+                    .keys()
+                    .map(std::clone::Clone::clone),
+            );
+            rv = rv
+                .union(&prop_keys)
+                .map(std::string::ToString::to_string)
+                .collect();
+        }
+        rv.iter().map(std::string::ToString::to_string).collect()
+    }
+
+    pub fn node_prop_keys(&self) -> Vec<String> {
+        let mut rv: HashSet<String> = HashSet::new();
+        for n in self.nodes.values() {
+            let prop_keys: HashSet<String> = HashSet::from_iter(
+                self.node_props(*n.node_id().unwrap())
+                    .keys()
+                    .map(std::clone::Clone::clone),
+            );
+            rv = rv
+                .union(&prop_keys)
+                .map(std::string::ToString::to_string)
+                .collect();
+        }
+        rv.iter().map(std::string::ToString::to_string).collect()
     }
 
     pub fn branch_length(&self, node_id: NodeId) -> Option<TreeFloat> {

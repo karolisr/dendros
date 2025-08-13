@@ -89,25 +89,34 @@ fn main() {
 
         let edges = tree.edges().unwrap();
         println!(
-            "                  is_tip      node                                                        x0     x1     y      y_prev   node_props                   branch_props"
+            "                  is_tip node                x0     x1     y      y_prev   node_props                   branch_props"
         );
-        println!("{}", "-".repeat(165));
+        println!("{}", "-".repeat(125));
         for e in edges {
-            let node_props = tree.node_props(e.node_id);
-            let node_props_str = if node_props.is_empty() {
+            let node_props_str = if e.node_props.is_empty() {
                 "None".to_string()
             } else {
-                node_props.join(";")
+                let props_str: Vec<String> = e
+                    .node_props
+                    .iter()
+                    .map(|(k, v)| format!("{k}={v}"))
+                    .collect();
+                props_str.join(";")
             };
 
             let branch_props_str = if e.branch_props.is_empty() {
                 "None".to_string()
             } else {
-                e.branch_props.join(";")
+                let props_str: Vec<String> = e
+                    .branch_props
+                    .iter()
+                    .map(|(k, v)| format!("{k}={v}"))
+                    .collect();
+                props_str.join(";")
             };
 
             println!(
-                "{:>8} {:>8} {:<5} {:<65} {:>.4} {:>.4} {:>.4} {:<8} {:<28} {}",
+                "{:>8} {:>8} {:<5} {:<20} {:>.4} {:>.4} {:>.4} {:<8} {:<28} {}",
                 match e.parent_node_id {
                     Some(p) => format!("{}", p),
                     None => format!("{:<}", "-"),

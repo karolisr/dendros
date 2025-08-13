@@ -1,6 +1,6 @@
 use super::TreeFloat;
 use slotmap::new_key_type;
-use std::{fmt::Display, sync::Arc};
+use std::{collections::HashMap, fmt::Display, sync::Arc};
 
 new_key_type! { pub struct NodeId; }
 
@@ -21,8 +21,8 @@ pub struct Node {
     child_ids: Vec<NodeId>,
     branch_length: Option<TreeFloat>,
     node_label: Option<Arc<str>>,
-    node_props: Vec<String>,
-    branch_props: Vec<String>,
+    node_props: HashMap<String, String>,
+    branch_props: HashMap<String, String>,
     node_type: NodeType,
     edge_idx: Option<usize>,
 }
@@ -32,19 +32,19 @@ impl Node {
         Self::default()
     }
 
-    pub fn node_props(&self) -> Vec<String> {
+    pub fn node_props(&self) -> HashMap<String, String> {
         self.node_props.clone()
     }
 
-    pub fn set_node_props(&mut self, node_props: Vec<String>) {
-        self.node_props = node_props;
-    }
-
-    pub fn branch_props(&self) -> Vec<String> {
+    pub fn branch_props(&self) -> HashMap<String, String> {
         self.branch_props.clone()
     }
 
-    pub fn set_branch_props(&mut self, branch_props: Vec<String>) {
+    pub fn set_node_props(&mut self, node_props: HashMap<String, String>) {
+        self.node_props = node_props;
+    }
+
+    pub fn set_branch_props(&mut self, branch_props: HashMap<String, String>) {
         self.branch_props = branch_props;
     }
 

@@ -2,7 +2,7 @@ use super::{NodeId, Tree, TreeFloat};
 use rayon::prelude::*;
 use std::{collections::HashMap, sync::Arc};
 
-#[derive(Clone, Debug, Default, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Edge {
     pub parent_node_id: Option<NodeId>,
     pub node_id: NodeId,
@@ -16,8 +16,8 @@ pub struct Edge {
     pub y: TreeFloat,
     pub is_tip: bool,
     pub edge_idx: usize,
-    pub node_props: Vec<String>,
-    pub branch_props: Vec<String>,
+    pub node_props: HashMap<String, String>,
+    pub branch_props: HashMap<String, String>,
 }
 
 pub(super) fn flatten_tree(tree: &Tree) -> Vec<Edge> {

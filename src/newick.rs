@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::{Node, NodeId, Tree, TreeFloat};
 
 pub fn write_newick(trees: &[Tree]) -> String {
@@ -26,8 +28,9 @@ fn newick_string(tree: &Tree) -> String {
 
         let node_props = tree.node_props(*first_node_id);
         if !node_props.is_empty() {
-            let props_str = node_props.join(",");
-            newick.push_str(&format!("[&{props_str}]"));
+            let props_str: Vec<String> =
+                node_props.iter().map(|(k, v)| format!("{k}={v}")).collect();
+            newick.push_str(&format!("[&{}]", props_str.join(",")));
         }
 
         newick.push(';');
@@ -58,8 +61,11 @@ fn _newick_string(child_nodes: Vec<&Node>, tree: &Tree) -> String {
         if let Some(child_id) = child.node_id() {
             let node_props = tree.node_props(*child_id);
             if !node_props.is_empty() {
-                let props_str = node_props.join(",");
-                newick.push_str(&format!("[&{props_str}]"));
+                let props_str: Vec<String> = node_props
+                    .iter()
+                    .map(|(k, v)| format!("{k}={v}"))
+                    .collect();
+                newick.push_str(&format!("[&{}]", props_str.join(",")));
             }
         }
 
@@ -70,8 +76,11 @@ fn _newick_string(child_nodes: Vec<&Node>, tree: &Tree) -> String {
         if let Some(child_id) = child.node_id() {
             let branch_props = tree.branch_props(*child_id);
             if !branch_props.is_empty() {
-                let props_str = branch_props.join(",");
-                newick.push_str(&format!("[&{props_str}]"));
+                let props_str: Vec<String> = branch_props
+                    .iter()
+                    .map(|(k, v)| format!("{k}={v}"))
+                    .collect();
+                newick.push_str(&format!("[&{}]", props_str.join(",")));
             }
         }
 
@@ -122,7 +131,6 @@ fn _parse_newick(s: String, parent_id: Option<NodeId>, mut tree: Tree) -> Tree {
     let mut n_open: i32 = 0;
     let mut is_open: bool = false;
     let mut was_open: bool = false;
-    // let mut comment: bool = false;
     let mut s_iter = s.char_indices();
     while i < s.len() {
         let character: char;
@@ -243,7 +251,7 @@ fn node<'a>(newick_label: impl Into<&'a str>) -> Node {
                     attrs
                 };
 
-            let node_props: Vec<String> =
+            let node_props: HashMap<String, String> =
                 split_comma_separated_attributes(attrs_content);
 
             if !node_props.is_empty() {
@@ -269,7 +277,7 @@ fn node<'a>(newick_label: impl Into<&'a str>) -> Node {
                 &branch_attrs
             };
 
-        let branch_props: Vec<String> =
+        let branch_props: HashMap<String, String> =
             split_comma_separated_attributes(branch_attrs_content);
 
         if !branch_props.is_empty() {
@@ -300,8 +308,8 @@ fn nodes_from_string<'a>(
     }
 }
 
-fn split_comma_separated_attributes(s: &str) -> Vec<String> {
-    let mut result = Vec::new();
+fn split_comma_separated_attributes(s: &str) -> HashMap<String, String> {
+    let mut result = HashMap::new();
     let mut current = String::new();
     let mut quote_depth = 0;
     let mut bracket_depth = 0;
@@ -323,7 +331,10 @@ fn split_comma_separated_attributes(s: &str) -> Vec<String> {
             ',' if quote_depth == 0 && bracket_depth == 0 => {
                 let trimmed = current.trim().to_string();
                 if !trimmed.is_empty() {
-                    result.push(trimmed);
+                    if let Some((k, v)) = trimmed.split_once('=') {
+                        let v = v.replace('"', "");
+                        _ = result.insert(k.to_string(), v.to_string());
+                    }
                 }
                 current.clear();
             }
@@ -335,7 +346,10 @@ fn split_comma_separated_attributes(s: &str) -> Vec<String> {
 
     let trimmed = current.trim().to_string();
     if !trimmed.is_empty() {
-        result.push(trimmed);
+        if let Some((k, v)) = trimmed.split_once('=') {
+            let v = v.replace('"', "");
+            _ = result.insert(k.to_string(), v.to_string());
+        }
     }
 
     result
