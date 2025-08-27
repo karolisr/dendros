@@ -1,0 +1,2 @@
+# Test file for Rich NEWICK format (rooted specification)
+[&R](A:0.1,B:0.2);

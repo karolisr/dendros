@@ -1,0 +1,2 @@
+# Test file for NHX format from the original specification
+(human[&&NHX:S=Homo_sapiens:D=N:B=100],chimp[&&NHX:S=Pan_troglodytes:D=N:B=95])[&&NHX:S=Hominidae:D=Y:B=85];

@@ -1,0 +1,2 @@
+# Test file for Rich NEWICK with extended bootstrap format
+(A:0.1:85:0.95,B:0.2:90:0.98);

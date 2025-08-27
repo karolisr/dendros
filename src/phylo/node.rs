@@ -138,6 +138,8 @@ impl Node {
             self.node_type = NodeType::FirstNode;
         } else if self.child_ids.len() == 2 && self.parent_id.is_none() {
             self.node_type = NodeType::Root;
+        } else if self.child_ids.len() <= 1 && self.parent_id.is_none() {
+            self.node_type = NodeType::FirstNode;
         }
         self.node_type
     }

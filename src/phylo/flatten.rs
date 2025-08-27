@@ -87,6 +87,10 @@ fn _flatten_tree(
 
     if !y.is_nan() {
         ys.push(y);
+    } else if ys.is_empty() {
+        // Single node case; no children.
+        y = 0.0;
+        ys = vec![y];
     } else {
         let y_min = ys.clone().into_iter().reduce(TreeFloat::min).unwrap();
         let y_max = ys.clone().into_iter().reduce(TreeFloat::max).unwrap();

@@ -1,0 +1,2 @@
+# Test file for Extended NEWICK format with hybrid nodes
+(A,B,((C,(Y)x#H1)c,(x#H1,D)d)e)f;
