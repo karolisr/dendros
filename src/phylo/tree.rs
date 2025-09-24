@@ -3,9 +3,9 @@ use super::TreeFloat;
 use super::flatten_tree;
 use super::node::{Node, NodeId, NodeType};
 use rayon::prelude::*;
+use rustc_hash::FxHashSet;
 use slotmap::SlotMap;
 use std::collections::HashMap;
-use std::collections::HashSet;
 use std::fmt::Display;
 use std::sync::Arc;
 use thiserror::Error;
@@ -55,35 +55,49 @@ impl Tree {
     }
 
     pub fn tip_heights(&self) -> Vec<(NodeId, TreeFloat)> {
-        let mut heights: Vec<(NodeId, TreeFloat)> = Vec::new();
         if let Some(first_node_id) = self.first_node_id {
-            for n in self.nodes.values() {
-                if n.is_tip()
-                    && let Some(&node_id) = n.node_id()
-                {
+            let tip_nodes = self.tip_node_ids_all();
+            let mut heights = Vec::with_capacity(tip_nodes.len());
+
+            // Use parallel processing for larger trees
+            if tip_nodes.len() > 100 {
+                heights = tip_nodes
+                    .par_iter()
+                    .map(|&node_id| {
+                        (node_id, self.dist(&first_node_id, &node_id))
+                    })
+                    .collect();
+            } else {
+                for &node_id in &tip_nodes {
                     heights
                         .push((node_id, self.dist(&first_node_id, &node_id)));
                 }
             }
+
+            heights
+        } else {
+            Vec::new()
         }
-        heights
     }
 
     pub fn is_ultrametric(&self, epsilon: TreeFloat) -> Option<bool> {
         if !self.is_rooted() {
             return None;
         }
-        let is_ultrametric = true;
+
         let tip_heights = self.tip_heights();
-        let mut prev_tip_height = tip_heights[0].1;
-        for (_node_id, h) in tip_heights {
-            if (prev_tip_height - h).abs() < epsilon {
-                prev_tip_height = h;
-            } else {
+        if tip_heights.is_empty() {
+            return Some(true);
+        }
+
+        let first_height = tip_heights[0].1;
+        for (_, height) in tip_heights.iter().skip(1) {
+            if (first_height - height).abs() >= epsilon {
                 return Some(false);
             }
         }
-        Some(is_ultrametric)
+
+        Some(true)
     }
 
     pub fn can_root(&self, node_id: &NodeId) -> bool {
@@ -188,21 +202,22 @@ impl Tree {
     }
 
     pub fn path(&self, right_id: &NodeId, left_id: &NodeId) -> Vec<NodeId> {
-        let mut rv: Vec<NodeId> = Vec::new();
         if left_id == right_id {
-            return rv;
+            return Vec::new();
         }
 
-        if let Some(parent_id) = self.parent_id(right_id) {
-            if parent_id != left_id {
-                rv.push(*parent_id);
-                rv.extend(self.path(parent_id, left_id));
+        let mut path = Vec::new();
+        let mut current = right_id;
+
+        while let Some(parent_id) = self.parent_id(current) {
+            if parent_id == left_id {
+                break;
             }
-        } else {
-            return rv;
+            path.push(*parent_id);
+            current = parent_id;
         }
 
-        rv
+        path
     }
 
     pub fn node_id_by_name<'a>(
@@ -334,13 +349,23 @@ impl Tree {
     }
 
     pub fn tip_node_ids(&self, node_id: &NodeId) -> Vec<NodeId> {
-        let cs: &[NodeId] = self.child_ids(node_id);
-        let mut rv: Vec<NodeId> = Vec::new();
-        if self.is_tip(node_id) {
-            rv.push(*node_id);
+        let mut result = Vec::new();
+        self.collect_tip_ids_recursive(*node_id, &mut result);
+        result
+    }
+
+    fn collect_tip_ids_recursive(
+        &self,
+        node_id: NodeId,
+        result: &mut Vec<NodeId>,
+    ) {
+        if self.is_tip(&node_id) {
+            result.push(node_id);
+        } else {
+            for child_id in self.child_ids(&node_id) {
+                self.collect_tip_ids_recursive(*child_id, result);
+            }
         }
-        cs.iter().for_each(|c| rv.append(&mut self.tip_node_ids(c)));
-        rv
     }
 
     pub fn tip_node_ids_all(&self) -> Vec<NodeId> {
@@ -352,35 +377,43 @@ impl Tree {
     }
 
     pub fn height(&self) -> TreeFloat {
-        let mut h = 0e0;
         if let Some(id) = &self.first_node_id {
-            for right in &self.tip_node_ids_all() {
-                let curr = self.dist(id, right);
-                if curr > h {
-                    h = curr;
-                }
+            let tip_ids = self.tip_node_ids_all();
+
+            // Use parallel processing for larger trees
+            if tip_ids.len() > 100 {
+                tip_ids
+                    .par_iter()
+                    .map(|right| self.dist(id, right))
+                    .reduce(|| 0.0, f64::max)
+            } else {
+                tip_ids
+                    .iter()
+                    .map(|right| self.dist(id, right))
+                    .fold(0.0, f64::max)
             }
+        } else {
+            0.0
         }
-        h
     }
 
     pub fn dist(&self, left: &NodeId, right: &NodeId) -> TreeFloat {
-        let mut h: TreeFloat = 0e0;
-
-        if left != right {
-            h += self.branch_length(*right).unwrap_or(0e0);
+        if left == right {
+            return 0.0;
         }
 
-        match self.parent_id(right) {
-            Some(p) => {
-                if p == left {
-                    h
-                } else {
-                    h + self.dist(left, p)
-                }
+        // For now, keep the original implementation as memoization would require &mut self
+        // TODO: Consider using RefCell for interior mutability if memoization is needed
+        let mut h: TreeFloat = 0.0;
+        h += self.branch_length(*right).unwrap_or(0.0);
+
+        if let Some(parent) = self.parent_id(right) {
+            if parent != left {
+                h += self.dist(left, parent);
             }
-            None => 0e0,
         }
+
+        h
     }
 
     pub fn child_count(&self, node_id: &NodeId) -> usize {
@@ -388,13 +421,12 @@ impl Tree {
     }
 
     pub fn child_count_recursive(&self, node_id: &NodeId) -> usize {
-        let mut rv: usize = self.child_count(node_id);
-
-        for child_id in self.child_ids(node_id) {
-            rv += self.child_count_recursive(child_id);
-        }
-
-        rv
+        let children = self.child_ids(node_id);
+        children.len()
+            + children
+                .iter()
+                .map(|child_id| self.child_count_recursive(child_id))
+                .sum::<usize>()
     }
 
     pub fn edges_are_stale(&self) -> bool {
@@ -486,35 +518,25 @@ impl Tree {
     }
 
     pub fn branch_prop_keys(&self) -> Vec<String> {
-        let mut rv: HashSet<String> = HashSet::new();
+        let mut rv: FxHashSet<String> = FxHashSet::default();
         for n in self.nodes.values() {
-            let prop_keys: HashSet<String> = HashSet::from_iter(
-                self.branch_props(*n.node_id().unwrap())
-                    .keys()
-                    .map(std::clone::Clone::clone),
+            let prop_keys: FxHashSet<String> = FxHashSet::from_iter(
+                self.branch_props(*n.node_id().unwrap()).keys().cloned(),
             );
-            rv = rv
-                .union(&prop_keys)
-                .map(std::string::ToString::to_string)
-                .collect();
+            rv.extend(prop_keys);
         }
-        rv.iter().map(std::string::ToString::to_string).collect()
+        rv.into_iter().collect()
     }
 
     pub fn node_prop_keys(&self) -> Vec<String> {
-        let mut rv: HashSet<String> = HashSet::new();
+        let mut rv: FxHashSet<String> = FxHashSet::default();
         for n in self.nodes.values() {
-            let prop_keys: HashSet<String> = HashSet::from_iter(
-                self.node_props(*n.node_id().unwrap())
-                    .keys()
-                    .map(std::clone::Clone::clone),
+            let prop_keys: FxHashSet<String> = FxHashSet::from_iter(
+                self.node_props(*n.node_id().unwrap()).keys().cloned(),
             );
-            rv = rv
-                .union(&prop_keys)
-                .map(std::string::ToString::to_string)
-                .collect();
+            rv.extend(prop_keys);
         }
-        rv.iter().map(std::string::ToString::to_string).collect()
+        rv.into_iter().collect()
     }
 
     pub fn branch_length(&self, node_id: NodeId) -> Option<TreeFloat> {

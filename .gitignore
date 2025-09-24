@@ -6,3 +6,7 @@ submodules/*
 .cargo/config.toml
 *.pdf
 /release
+/benchmark_results/**/*.html
+/benchmark_results/**/*.svg
+/benchmark_results/**/*.json
+/z_old

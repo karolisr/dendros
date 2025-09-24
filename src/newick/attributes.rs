@@ -1,4 +1,47 @@
+use super::nhx::{extract_nhx_content, parse_nhx_attributes};
 use std::collections::HashMap;
+
+/// Splits a label into the name part and attributes part, respecting quotes.
+///
+/// Handles multiple consecutive attribute blocks by combining them.
+///
+/// Returns `(label, attributes_content)` where `attributes_content` is the
+/// content inside `[]`.
+pub(crate) fn split_label_and_attributes(
+    node_lab: &str,
+) -> Option<(&str, String)> {
+    let mut in_quotes = false;
+    let mut quote_char = '\0';
+    let mut first_bracket_pos = None;
+
+    for (i, c) in node_lab.char_indices() {
+        match c {
+            '\'' | '"' if !in_quotes => {
+                in_quotes = true;
+                quote_char = c;
+            }
+            c if in_quotes && c == quote_char => {
+                in_quotes = false;
+            }
+            '[' if !in_quotes => {
+                if first_bracket_pos.is_none() {
+                    first_bracket_pos = Some(i);
+                }
+                break;
+            }
+            _ => {}
+        }
+    }
+
+    if let Some(start_pos) = first_bracket_pos {
+        let label = &node_lab[..start_pos];
+        let combined_attrs =
+            extract_multiple_attribute_blocks(&node_lab[start_pos..]);
+        return Some((label, combined_attrs));
+    }
+
+    None
+}
 
 /// Extracts and combines multiple consecutive attribute blocks.
 ///
@@ -160,7 +203,6 @@ pub fn split_comma_separated_attributes(s: &str) -> HashMap<String, String> {
 ///
 /// Examples:
 /// - `"bootstrap=95"`  → `{"bootstrap": "95"}`
-/// - `"&NHX:S=Human"`  → `{"S": "Human"}`
 /// - `"&support=0.95"` → `{"support": "0.95"}`
 /// - `"100"`           → `{"support": "100"}` (numeric values default to support)
 /// - `"label"`         → `{"value": "label"}` (non-numeric values default to generic value)
@@ -171,10 +213,10 @@ fn process_attribute(part: &str, result: &mut HashMap<String, String>) {
 
     if let Some((k, v)) = part.split_once('=') {
         let v = v.replace('"', "");
-
-        if let Some(nhx_content) = extract_nhx_content(k) {
-            _ = result.insert(nhx_content.to_string(), v.to_string());
-        } else if let Some(stripped) = k.strip_prefix("&") {
+        // if let Some(nhx_content) = extract_nhx_content(k) {
+        //     _ = result.insert(nhx_content.to_string(), v.to_string());
+        // } else
+        if let Some(stripped) = k.strip_prefix("&") {
             _ = result.insert(stripped.to_string(), v.to_string());
         } else {
             _ = result.insert(k.to_string(), v.to_string());
@@ -192,39 +234,18 @@ fn process_attribute(part: &str, result: &mut HashMap<String, String>) {
     }
 }
 
-/// Parses NHX (New Hampshire X) format attributes.
-///
-/// Format: `S=Human:D=Y:B=100` (colon-separated key=value pairs).
-fn parse_nhx_attributes(s: &str) -> HashMap<String, String> {
-    let mut result = HashMap::new();
-    let parts: Vec<&str> = s.split(':').collect();
-
-    for part in parts {
-        let part = part.trim();
-        if let Some((k, v)) = part.split_once('=') {
-            let key = k.trim().to_string();
-            let value = v.trim().replace('"', "");
-            _ = result.insert(key, value);
-        } else if !part.is_empty() {
-            // Handle key-only values.
-            // ToDo: Implement better handling of key-only values.
-            //       Use Option of an Enum for the value.
-            _ = result.insert(part.to_string(), String::new());
+/// Combines "Rich NEWICK" attributes with bracket attributes.
+pub(crate) fn combine_attributes(
+    rich_attrs: Vec<String>,
+    bracket_attrs: Option<String>,
+) -> Option<String> {
+    match (rich_attrs.is_empty(), bracket_attrs) {
+        (true, None) => None,
+        (true, Some(bracket_str)) => Some(bracket_str),
+        (false, None) => Some(rich_attrs.join(",")),
+        (false, Some(bracket_str)) => {
+            let combined = [rich_attrs.join(","), bracket_str].join(",");
+            Some(combined)
         }
-    }
-
-    result
-}
-
-/// Checks if a string is in NHX format and extracts the content.
-fn extract_nhx_content(s: &str) -> Option<&str> {
-    if s.starts_with("&&NHX:") {
-        Some(s.strip_prefix("&&NHX:").unwrap_or_default())
-    } else if s.starts_with("&NHX:") {
-        Some(s.strip_prefix("&NHX:").unwrap_or_default())
-    } else if s.starts_with("&NHX") {
-        Some(s.strip_prefix("&NHX").unwrap_or_default())
-    } else {
-        None
     }
 }

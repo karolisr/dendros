@@ -17,8 +17,16 @@
 
 [dependencies]
     rayon="1.11.0"
+    rustc-hash="2.1.1"
     slotmap="1.0.7"
     thiserror="2.0.16"
+
+[dev-dependencies]
+    criterion={version="0.7.0", features=["html_reports"]}
+
+[[bench]]
+    harness=false
+    name="newick_parser"
 
 [profile.dev] # ------------------------------------------------------------------------------------
     codegen-units=6       # 256

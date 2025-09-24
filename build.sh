@@ -6,10 +6,12 @@
 # rustc -Ctarget-cpu=native --print cfg
 
 # RUSTFLAGS="-Ctarget-cpu=generic"
-RUSTFLAGS="-Ctarget-cpu=native"
-export RUSTFLAGS
+# RUSTFLAGS="-Ctarget-cpu=native"
+# export RUSTFLAGS
 
 cargo fmt && \
+
+cargo test --tests && \
 
 cargo check --profile dev && \
 cargo clippy --profile dev && \
