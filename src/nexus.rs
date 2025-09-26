@@ -1,5 +1,6 @@
 use super::newick::{
-    extract_multiple_attribute_blocks, split_comma_separated_attributes,
+    extract_multiple_attribute_blocks, remove_quotes,
+    split_comma_separated_attributes,
 };
 use crate::{Tree, parse_newick};
 use std::collections::HashMap;
@@ -46,6 +47,7 @@ pub struct NexusFile {
     pub taxa: Vec<Taxon>,
     pub trees: HashMap<String, Tree>,
     pub comments: Vec<String>,
+    pub translate_table: Option<HashMap<String, String>>,
 }
 
 impl Default for NexusFile {
@@ -56,7 +58,12 @@ impl Default for NexusFile {
 
 impl NexusFile {
     pub fn new() -> Self {
-        Self { taxa: Vec::new(), trees: HashMap::new(), comments: Vec::new() }
+        Self {
+            taxa: Vec::new(),
+            trees: HashMap::new(),
+            comments: Vec::new(),
+            translate_table: None,
+        }
     }
 
     pub fn count_of_trees(&self) -> usize {
@@ -108,6 +115,7 @@ pub(crate) struct NexusParser {
     current_line: usize,
     nexus_file: NexusFile,
     expected_ntax: Option<usize>,
+    translate_table: Option<HashMap<String, String>>,
 }
 
 impl NexusParser {
@@ -120,6 +128,7 @@ impl NexusParser {
             current_line: 0,
             nexus_file: NexusFile::new(),
             expected_ntax: None,
+            translate_table: None,
         }
     }
 
@@ -392,12 +401,20 @@ impl NexusParser {
             let line = self.current_line().trim().to_string();
 
             if line.to_uppercase().starts_with("END") {
+                if let Some(translate_table) = &self.translate_table {
+                    self.nexus_file.translate_table =
+                        Some(translate_table.clone());
+                }
                 self.advance_line();
                 return Ok(());
             }
 
-            if line.to_uppercase().starts_with("TREE ") {
+            if line.to_uppercase().starts_with("TRANSLATE") {
+                self.parse_translate_command()?;
+                continue;
+            } else if line.to_uppercase().starts_with("TREE ") {
                 self.parse_tree_definition(&line)?;
+            } else if !line.is_empty() {
             }
 
             self.advance_line();
@@ -406,9 +423,95 @@ impl NexusParser {
         Err(NexusError::UnterminatedBlock { block: "TREES".to_string() })
     }
 
-    fn parse_tree_definition(&mut self, line: &str) -> NexusResult<()> {
-        // Parse tree definition: TREE name = [&R] NEWICK_STRING;
+    fn parse_translate_command(&mut self) -> NexusResult<()> {
+        let mut translate_table = HashMap::new();
+        self.advance_line(); // Skips the "translate" line
 
+        while !self.is_at_end() {
+            let line = self.current_line().trim();
+
+            // Check if we've reached the end of the translate block
+            if line.is_empty() {
+                self.advance_line();
+                continue;
+            }
+
+            // Check for end of translate (semicolon or "tree" command)
+            if line == ";" || line.to_uppercase().starts_with("TREE ") {
+                if line == ";" {
+                    self.advance_line();
+                }
+                break;
+            }
+
+            Self::parse_translate_entries(line, &mut translate_table)?;
+            self.advance_line();
+        }
+
+        self.translate_table = Some(translate_table);
+        Ok(())
+    }
+
+    fn parse_translate_entries(
+        line: &str,
+        translate_table: &mut HashMap<String, String>,
+    ) -> NexusResult<()> {
+        let clean_line = line.trim_end_matches(',').trim_end_matches(';');
+
+        // Split by commas to handle multiple entries on one line
+        for entry in clean_line.split(',') {
+            let entry = entry.trim();
+            if entry.is_empty() {
+                continue;
+            }
+
+            // Split by whitespace to separate number from name
+            let parts: Vec<&str> = entry.split_whitespace().collect();
+            if parts.len() >= 2 {
+                let number = parts[0].to_string();
+                let mut taxon_name = parts[1..].join(" ");
+
+                // Remove quotes if present
+                // ToDo: are double quotes ever used here?
+                // if (taxon_name.starts_with('"') && taxon_name.ends_with('"'))
+                //     || (taxon_name.starts_with('\'')
+                //         && taxon_name.ends_with('\''))
+                // {
+                //     taxon_name =
+                //         taxon_name[1..taxon_name.len() - 1].to_string();
+                // }
+
+                // taxon_name = taxon_name.replace('_', " ");
+
+                taxon_name = remove_quotes(&taxon_name);
+
+                let _ = translate_table.insert(number, taxon_name);
+            }
+        }
+
+        Ok(())
+    }
+
+    fn apply_translate_table(&mut self, tree: &mut Tree) {
+        if let Some(translate_table) = &self.translate_table {
+            for node_id in tree.tip_node_ids_all() {
+                if let Some(node) = tree.node_mut(Some(node_id)) {
+                    if let Some(label) = node.node_label() {
+                        if let Some(label_translated) =
+                            translate_table.get(label.as_ref())
+                        {
+                            node.set_node_label(Some(
+                                label_translated.as_str(),
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Parse tree definition: `TREE name = [&R] NEWICK_STRING;`
+    fn parse_tree_definition(&mut self, line: &str) -> NexusResult<()> {
         // Remove "TREE " prefix (case insensitive)
         let line = if line.to_uppercase().starts_with("TREE ") {
             &line[5..]
@@ -472,6 +575,10 @@ impl NexusParser {
 
                         // Merge taxa attributes with tree node attributes
                         self.merge_taxa_attributes_with_tree(&mut tree)?;
+
+                        if self.translate_table.is_some() {
+                            self.apply_translate_table(&mut tree);
+                        }
 
                         let _ = self.nexus_file.trees.insert(tree_name, tree);
                     } else {
@@ -630,4 +737,183 @@ fn remove_nexus_comments(line: &str) -> String {
     }
 
     result
+}
+
+#[cfg(test)]
+mod nexus_translate_tests {
+    use super::*;
+
+    #[test]
+    fn test_translate_simple() {
+        let nexus_content = r#"
+#NEXUS
+begin trees;
+translate
+  1 Taxon_A,
+  2 Taxon_B,
+  3 Taxon_C
+;
+tree test = (1,(2,3));
+end;
+        "#
+        .trim();
+
+        let result = parse_nexus_advanced(nexus_content);
+        assert!(result.is_ok());
+
+        let nexus_file = result.unwrap();
+
+        // Check translate table
+        assert!(nexus_file.translate_table.is_some());
+        let translate_table = nexus_file.translate_table.unwrap();
+        assert_eq!(translate_table.len(), 3);
+        assert_eq!(translate_table.get("1"), Some(&"Taxon A".to_string()));
+        assert_eq!(translate_table.get("2"), Some(&"Taxon B".to_string()));
+        assert_eq!(translate_table.get("3"), Some(&"Taxon C".to_string()));
+
+        // Check that tree was parsed
+        assert_eq!(nexus_file.trees.len(), 1);
+        assert!(nexus_file.trees.contains_key("test"));
+
+        // Check that taxon names were translated in the tree
+        let tree = nexus_file.trees.get("test").unwrap();
+        let mut leaf_labels = Vec::new();
+        for node_id in tree.tip_node_ids_all() {
+            if let Some(node) = tree.node(Some(node_id)) {
+                if let Some(label) = node.node_label() {
+                    leaf_labels.push(label.to_string());
+                }
+            }
+        }
+
+        assert!(leaf_labels.contains(&"Taxon A".to_string()));
+        assert!(leaf_labels.contains(&"Taxon B".to_string()));
+        assert!(leaf_labels.contains(&"Taxon C".to_string()));
+        assert!(!leaf_labels.contains(&"1".to_string()));
+        assert!(!leaf_labels.contains(&"2".to_string()));
+        assert!(!leaf_labels.contains(&"3".to_string()));
+    }
+
+    #[test]
+    fn test_translate_with_branch_lengths() {
+        let nexus_content = "
+            #NEXUS
+            begin trees;
+            translate
+            1 Species_One,
+            2 Species_Two
+            ;
+            tree with_lengths = (1:0.1,2:0.2);
+            end;
+        "
+        .trim();
+
+        let result = parse_nexus_advanced(nexus_content);
+        assert!(result.is_ok());
+
+        let nexus_file = result.unwrap();
+
+        // Check translate table
+        assert!(nexus_file.translate_table.is_some());
+        let translate_table = nexus_file.translate_table.unwrap();
+        assert_eq!(translate_table.len(), 2);
+
+        // Check tree
+        assert_eq!(nexus_file.trees.len(), 1);
+        let tree = nexus_file.trees.get("with_lengths").unwrap();
+
+        // Verify translation worked with branch lengths
+        let mut tip_labels = Vec::new();
+        for node_id in tree.tip_node_ids_all() {
+            if let Some(node) = tree.node(Some(node_id)) {
+                if let Some(label) = node.node_label() {
+                    tip_labels.push(label.to_string());
+                }
+            }
+        }
+
+        assert!(tip_labels.contains(&"Species One".to_string()));
+        assert!(tip_labels.contains(&"Species Two".to_string()));
+    }
+
+    #[test]
+    fn test_no_translate_table() {
+        let nexus_content = "
+            #NEXUS
+            begin trees;
+            tree simple = (A,(B,C));
+            end;
+        "
+        .trim();
+
+        let result = parse_nexus_advanced(nexus_content);
+        assert!(result.is_ok());
+
+        let nexus_file = result.unwrap();
+
+        // Should have no translate table
+        assert!(nexus_file.translate_table.is_none());
+
+        // Tree should still work normally
+        assert_eq!(nexus_file.trees.len(), 1);
+        let tree = nexus_file.trees.get("simple").unwrap();
+
+        let mut leaf_labels = Vec::new();
+        for node_id in tree.node_ids_all() {
+            if tree.is_tip(&node_id) {
+                if let Some(node) = tree.node(Some(node_id)) {
+                    if let Some(label) = node.node_label() {
+                        leaf_labels.push(label.to_string());
+                    }
+                }
+            }
+        }
+
+        assert!(leaf_labels.contains(&"A".to_string()));
+        assert!(leaf_labels.contains(&"B".to_string()));
+        assert!(leaf_labels.contains(&"C".to_string()));
+    }
+
+    #[test]
+    fn test_mrbayes_format() {
+        // Test a small portion similar to the MrBayes format
+        let nexus_content = "
+            #NEXUS
+            begin trees;
+            translate
+            1 Chlamydomonas_reinhardtii__01,
+            2 Volvox_carteri__01,
+            3 Volvox_carteri__02,
+            4 Bryopsis_maxima__01,
+            5 Cycas_rumphii__01
+            ;
+            tree gen.1 = [&U] ((4:0.476,((1:0.171,2:0.164):0.257,3:0.079):0.251):0.083,5:0.086);
+            end;
+        "
+        .trim();
+
+        let result = parse_nexus_advanced(nexus_content);
+        assert!(result.is_ok());
+
+        let nexus_file = result.unwrap();
+
+        // Check translate table
+        assert!(nexus_file.translate_table.is_some());
+        let translate_table = nexus_file.translate_table.unwrap();
+        assert_eq!(translate_table.len(), 5);
+
+        // Check specific translations
+        assert_eq!(
+            translate_table.get("1"),
+            Some(&"Chlamydomonas reinhardtii  01".to_string())
+        );
+        assert_eq!(
+            translate_table.get("4"),
+            Some(&"Bryopsis maxima  01".to_string())
+        );
+
+        // Check tree exists and has correct structure
+        assert_eq!(nexus_file.trees.len(), 1);
+        assert!(nexus_file.trees.contains_key("gen.1"));
+    }
 }
