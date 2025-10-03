@@ -1,3 +1,4 @@
+use super::Attribute;
 use std::collections::HashMap;
 
 /// Checks if a string is in NHX format and extracts the content.
@@ -16,8 +17,8 @@ pub(super) fn extract_nhx_content(s: &str) -> Option<&str> {
 /// Parses NHX (New Hampshire X) format attributes.
 ///
 /// Format: `S=Human:D=Y:B=100` (colon-separated key=value pairs).
-pub(super) fn parse_nhx_attributes(s: &str) -> HashMap<String, String> {
-    let mut result = HashMap::new();
+pub(super) fn parse_nhx_attributes(s: &str) -> HashMap<String, Attribute> {
+    let mut result: HashMap<String, Attribute> = HashMap::new();
     let parts: Vec<&str> = s.split(':').collect();
 
     for part in parts {
@@ -25,12 +26,12 @@ pub(super) fn parse_nhx_attributes(s: &str) -> HashMap<String, String> {
         if let Some((k, v)) = part.split_once('=') {
             let key = k.trim().to_string();
             let value = v.trim().replace('"', "");
-            _ = result.insert(key, value);
+            _ = result.insert(key, value.into());
         } else if !part.is_empty() {
             // Handle key-only values.
             // ToDo: Implement better handling of key-only values.
             //       Use Option of an Enum for the value.
-            _ = result.insert(part.to_string(), String::new());
+            _ = result.insert(part.to_string(), String::new().into());
         }
     }
 
@@ -60,9 +61,9 @@ mod tests {
         assert_eq!(
             parse_nhx_attributes("A=nhx_a:B=1.123:C=100"),
             HashMap::from([
-                ("A".to_string(), "nhx_a".to_string()),
-                ("C".to_string(), "100".to_string()),
-                ("B".to_string(), "1.123".to_string())
+                ("A".to_string(), Attribute::Text("nhx_a".into())),
+                ("C".to_string(), Attribute::Text("100".into())),
+                ("B".to_string(), Attribute::Text("1.123".into()))
             ])
         );
     }

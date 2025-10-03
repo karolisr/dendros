@@ -1,7 +1,7 @@
 use super::Edge;
 use super::TreeFloat;
 use super::flatten_tree;
-use super::node::{Node, NodeId, NodeType};
+use super::node::{Attribute, Node, NodeId, NodeType};
 use rayon::prelude::*;
 use rustc_hash::FxHashSet;
 use slotmap::SlotMap;
@@ -509,11 +509,11 @@ impl Tree {
         Self::default()
     }
 
-    pub fn branch_props(&self, node_id: NodeId) -> HashMap<String, String> {
+    pub fn branch_props(&self, node_id: NodeId) -> HashMap<String, Attribute> {
         self.nodes[node_id].branch_props()
     }
 
-    pub fn node_props(&self, node_id: NodeId) -> HashMap<String, String> {
+    pub fn node_props(&self, node_id: NodeId) -> HashMap<String, Attribute> {
         self.nodes[node_id].node_props()
     }
 
@@ -867,8 +867,18 @@ impl Tree {
 
     fn print_node(&self, node: &Node, _level: usize) -> String {
         let mut rv: String = String::new();
+        let branch_props: String = node
+            .branch_props()
+            .iter()
+            .map(|(k, v)| format!("{k}: {v}; "))
+            .collect();
+        let node_props: String = node
+            .node_props()
+            .iter()
+            .map(|(k, v)| format!("{k}: {v}; "))
+            .collect();
         rv.push_str(&format!(
-            "{}- {} | {} | {:<5.3} | {}\n",
+            "{}- {} | {} | {:<5.3} | {} | {}| {}\n",
             " ".repeat(_level * 4),
             if let Some(node_id) = node.node_id() {
                 node_id.to_string()
@@ -885,7 +895,9 @@ impl Tree {
             } else {
                 TreeFloat::NAN
             },
-            node.node_type()
+            node.node_type(),
+            branch_props,
+            node_props,
         ));
 
         for &id in node.child_ids() {

@@ -1,3 +1,4 @@
+use super::Attribute;
 use super::nhx::{extract_nhx_content, parse_nhx_attributes};
 use std::collections::HashMap;
 
@@ -9,7 +10,7 @@ use std::collections::HashMap;
 /// content inside `[]`.
 pub(crate) fn split_label_and_attributes(
     node_lab: &str,
-) -> Option<(&str, String)> {
+) -> Option<(&str, HashMap<String, Attribute>)> {
     let mut in_quotes = false;
     let mut quote_char = '\0';
     let mut first_bracket_pos = None;
@@ -48,8 +49,10 @@ pub(crate) fn split_label_and_attributes(
 /// Handles cases like `"[&a=1][&b=2][&c=3]"` by extracting all blocks
 /// and combining their attributes into a single comma-separated string:
 /// `"a=1,b=2,c=3"`.
-pub(crate) fn extract_multiple_attribute_blocks(input: &str) -> String {
-    let mut all_attrs = HashMap::new();
+pub(crate) fn extract_multiple_attribute_blocks(
+    input: &str,
+) -> HashMap<String, Attribute> {
+    let mut all_attrs: HashMap<String, Attribute> = HashMap::new();
     let mut pos = 0;
 
     while pos < input.len() {
@@ -89,15 +92,7 @@ pub(crate) fn extract_multiple_attribute_blocks(input: &str) -> String {
         }
     }
 
-    if all_attrs.is_empty() {
-        String::new()
-    } else {
-        all_attrs
-            .iter()
-            .map(|(k, v)| format!("{}={}", k, v))
-            .collect::<Vec<_>>()
-            .join(",")
-    }
+    all_attrs
 }
 
 /// Finds the position of the matching closing bracket, starting from a string
@@ -135,8 +130,8 @@ fn find_matching_bracket(s: &str) -> Option<usize> {
 /// Parses comma-separated attributes.
 ///
 /// Handles `key=value` pairs, simple values, and NHX format.
-pub fn split_comma_separated_attributes(s: &str) -> HashMap<String, String> {
-    let mut result = HashMap::new();
+pub fn split_comma_separated_attributes(s: &str) -> HashMap<String, Attribute> {
+    let mut result: HashMap<String, Attribute> = HashMap::new();
 
     if let Some(nhx_content) = extract_nhx_content(s) {
         return parse_nhx_attributes(nhx_content);
@@ -206,7 +201,7 @@ pub fn split_comma_separated_attributes(s: &str) -> HashMap<String, String> {
 /// - `"&support=0.95"` → `{"support": "0.95"}`
 /// - `"100"`           → `{"support": "100"}` (numeric values default to support)
 /// - `"label"`         → `{"value": "label"}` (non-numeric values default to generic value)
-fn process_attribute(part: &str, result: &mut HashMap<String, String>) {
+fn process_attribute(part: &str, result: &mut HashMap<String, Attribute>) {
     if part.is_empty() {
         return;
     }
@@ -217,34 +212,39 @@ fn process_attribute(part: &str, result: &mut HashMap<String, String>) {
         //     _ = result.insert(nhx_content.to_string(), v.to_string());
         // } else
         if let Some(stripped) = k.strip_prefix("&") {
-            _ = result.insert(stripped.to_string(), v.to_string());
+            _ = result.insert(stripped.to_string(), v.into());
         } else {
-            _ = result.insert(k.to_string(), v.to_string());
+            _ = result.insert(k.to_string(), v.into());
         }
     } else {
         // Handle RAxML-style simple values (e.g., "100" becomes "support=100").
         // ToDo: Implement better handling of value-only attributes.
         if part.chars().all(|c| c.is_ascii_digit() || c == '.') {
-            _ = result.insert("support".to_string(), part.to_string());
+            _ = result.insert(
+                "support".to_string(),
+                Attribute::Decimal(part.parse().unwrap()),
+            );
         } else {
             // For non-numeric simple values, use a generic "value" key.
             // ToDo: Implement better handling of value-only attributes.
-            _ = result.insert("value".to_string(), part.to_string());
+            _ = result.insert("value".to_string(), part.into());
         }
     }
 }
 
 /// Combines "Rich NEWICK" attributes with bracket attributes.
 pub(crate) fn combine_attributes(
-    rich_attrs: Vec<String>,
-    bracket_attrs: Option<String>,
-) -> Option<String> {
+    rich_attrs: HashMap<String, Attribute>,
+    bracket_attrs: Option<HashMap<String, Attribute>>,
+) -> Option<HashMap<String, Attribute>> {
     match (rich_attrs.is_empty(), bracket_attrs) {
         (true, None) => None,
         (true, Some(bracket_str)) => Some(bracket_str),
-        (false, None) => Some(rich_attrs.join(",")),
+        (false, None) => Some(rich_attrs),
         (false, Some(bracket_str)) => {
-            let combined = [rich_attrs.join(","), bracket_str].join(",");
+            let mut combined: HashMap<String, Attribute> = HashMap::new();
+            combined.extend(rich_attrs);
+            combined.extend(bracket_str);
             Some(combined)
         }
     }

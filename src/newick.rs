@@ -4,10 +4,10 @@ mod validation;
 
 use std::collections::HashMap;
 
-use crate::{Node, NodeId, Tree, TreeFloat};
+use super::{Attribute, Node, NodeId, Tree, TreeFloat};
 pub(crate) use attributes::{
     combine_attributes, extract_multiple_attribute_blocks,
-    split_comma_separated_attributes, split_label_and_attributes,
+    split_label_and_attributes,
 };
 use validation::is_valid_newick_structure;
 
@@ -162,14 +162,6 @@ impl JointQuoteAndNestingState {
     fn set_in_single_quotes(&mut self, state: bool) {
         self.quote_state.in_single_quotes = state;
     }
-
-    // fn in_double_quotes(&self) -> bool {
-    //     self.quote_state.in_double_quotes
-    // }
-
-    // fn set_in_double_quotes(&mut self, state: bool) {
-    //     self.quote_state.in_double_quotes = state;
-    // }
 
     fn at_top_level(&self) -> bool {
         self.nesting_state.at_top_level()
@@ -559,20 +551,7 @@ fn node<'a>(newick_label: impl Into<&'a str>) -> Node {
             if !trimmed_label.is_empty() {
                 node.set_node_label(Some(&*trimmed_label));
             }
-
-            let attrs_content =
-                if let Some(attrs_stripped) = attrs.strip_prefix('&') {
-                    attrs_stripped.to_string()
-                } else {
-                    attrs
-                };
-
-            let node_props: HashMap<String, String> =
-                split_comma_separated_attributes(&attrs_content);
-
-            if !node_props.is_empty() {
-                node.set_node_props(node_props);
-            }
+            node.set_node_props(attrs);
         } else {
             let trimmed_label = remove_quotes(node_lab.trim());
             if !trimmed_label.is_empty() {
@@ -586,19 +565,7 @@ fn node<'a>(newick_label: impl Into<&'a str>) -> Node {
     };
 
     if let Some(branch_attrs) = branch_attrs {
-        let branch_attrs_content =
-            if let Some(attrs_stripped) = branch_attrs.strip_prefix('&') {
-                attrs_stripped
-            } else {
-                &branch_attrs
-            };
-
-        let branch_props: HashMap<String, String> =
-            split_comma_separated_attributes(branch_attrs_content);
-
-        if !branch_props.is_empty() {
-            node.set_branch_props(branch_props);
-        }
+        node.set_branch_props(branch_attrs);
     };
 
     node
@@ -805,7 +772,7 @@ fn process_rich_newick_prefix(s: &str) -> (String, Option<bool>) {
 /// - `branch_attributes`: Raw attribute string (None if not present)
 pub(crate) fn parse_newick_label<'a>(
     label: impl Into<&'a str>,
-) -> (Option<String>, Option<TreeFloat>, Option<String>) {
+) -> (Option<String>, Option<TreeFloat>, Option<HashMap<String, Attribute>>) {
     let label: &str = label.into();
 
     // Simple case: no special characters
@@ -836,7 +803,9 @@ pub(crate) fn parse_newick_label<'a>(
 }
 
 /// Parses branch part (length and attributes).
-fn parse_branch_part(branch_part: &str) -> (Option<TreeFloat>, Option<String>) {
+fn parse_branch_part(
+    branch_part: &str,
+) -> (Option<TreeFloat>, Option<HashMap<String, Attribute>>) {
     // Check if branch part contains attributes [...]
     if let Some(bracket_start) = branch_part.find('[') {
         if let Some(bracket_end) = branch_part.find(']') {
@@ -862,7 +831,7 @@ fn parse_branch_part(branch_part: &str) -> (Option<TreeFloat>, Option<String>) {
 fn parse_attributes_first_format(
     branch_part: &str,
     bracket_end: usize,
-) -> (Option<TreeFloat>, Option<String>) {
+) -> (Option<TreeFloat>, Option<HashMap<String, Attribute>>) {
     let attrs_str = &branch_part[..=bracket_end];
     let brlen_str = &branch_part[bracket_end + 1..];
 
@@ -880,7 +849,7 @@ fn parse_attributes_first_format(
 fn parse_length_first_format(
     branch_part: &str,
     bracket_start: usize,
-) -> (Option<TreeFloat>, Option<String>) {
+) -> (Option<TreeFloat>, Option<HashMap<String, Attribute>>) {
     let brlen_str = &branch_part[..bracket_start];
     let attrs_str = &branch_part[bracket_start..];
 
@@ -894,7 +863,7 @@ fn parse_length_first_format(
         } else {
             brlen_str.parse::<TreeFloat>().ok()
         };
-        (branch_length, Vec::new())
+        (branch_length, HashMap::new())
     };
 
     let bracket_attrs = extract_bracket_content(attrs_str);
@@ -905,7 +874,9 @@ fn parse_length_first_format(
 }
 
 /// Extracts content from brackets `[...]`, handling multiple consecutive blocks: `[&a=1][&b=2][&c=3]`.
-fn extract_bracket_content(attrs_str: &str) -> Option<String> {
+fn extract_bracket_content(
+    attrs_str: &str,
+) -> Option<HashMap<String, Attribute>> {
     if attrs_str.starts_with('[') {
         let result = extract_multiple_attribute_blocks(attrs_str);
         if result.is_empty() { None } else { Some(result) }
@@ -917,7 +888,7 @@ fn extract_bracket_content(attrs_str: &str) -> Option<String> {
 /// Parses "Rich NEWICK" format: `:length:bootstrap:probability`.
 fn parse_rich_newick_format(
     branch_part: &str,
-) -> (Option<TreeFloat>, Option<String>) {
+) -> (Option<TreeFloat>, Option<HashMap<String, Attribute>>) {
     let parts: Vec<&str> = branch_part.split(':').collect();
     if parts.len() > 1 {
         // "Rich NEWICK" extended format detected
@@ -926,7 +897,8 @@ fn parse_rich_newick_format(
         let branch_attrs = if rich_attrs.is_empty() {
             None
         } else {
-            Some(rich_attrs.join(","))
+            // Some(rich_attrs.join(","))
+            Some(rich_attrs)
         };
         (branch_length, branch_attrs)
     } else {
@@ -938,7 +910,7 @@ fn parse_rich_newick_format(
 /// Parses "Rich NEWICK" extended fields: `:length:bootstrap:probability`.
 fn parse_rich_newick_extended_fields(
     brlen_str: &str,
-) -> (Option<TreeFloat>, Vec<String>) {
+) -> (Option<TreeFloat>, HashMap<String, Attribute>) {
     let parts: Vec<&str> = brlen_str.split(':').collect();
     let branch_length = if parts[0].is_empty() {
         None
@@ -946,12 +918,18 @@ fn parse_rich_newick_extended_fields(
         parts[0].parse::<TreeFloat>().ok()
     };
 
-    let mut rich_attrs = Vec::new();
+    let mut rich_attrs: HashMap<String, Attribute> = HashMap::new();
     if parts.len() > 1 && !parts[1].is_empty() {
-        rich_attrs.push(format!("bootstrap={}", parts[1]));
+        _ = rich_attrs.insert(
+            "bootstrap".to_string(),
+            Attribute::Integer(parts[1].parse().unwrap()),
+        );
     }
     if parts.len() > 2 && !parts[2].is_empty() {
-        rich_attrs.push(format!("probability={}", parts[2]));
+        _ = rich_attrs.insert(
+            "probability".to_string(),
+            Attribute::Decimal(parts[2].parse().unwrap()),
+        );
     }
 
     (branch_length, rich_attrs)

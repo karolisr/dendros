@@ -1,8 +1,5 @@
-use super::newick::{
-    extract_multiple_attribute_blocks, remove_quotes,
-    split_comma_separated_attributes,
-};
-use crate::{Tree, parse_newick};
+use super::newick::{extract_multiple_attribute_blocks, remove_quotes};
+use crate::{Attribute, Tree, parse_newick};
 use std::collections::HashMap;
 
 pub fn parse_nexus(content: String) -> Option<Vec<Tree>> {
@@ -94,7 +91,7 @@ impl NexusFile {
 #[derive(Debug, Clone)]
 pub struct Taxon {
     pub name: String,
-    pub attributes: HashMap<String, String>,
+    pub attributes: HashMap<String, Attribute>,
 }
 
 impl Taxon {
@@ -104,7 +101,7 @@ impl Taxon {
 
     pub fn new_with_attributes(
         name: String,
-        attributes: HashMap<String, String>,
+        attributes: HashMap<String, Attribute>,
     ) -> Self {
         Self { name, attributes }
     }
@@ -376,12 +373,7 @@ impl NexusParser {
                     name_part
                 };
 
-            let attr_string = extract_multiple_attribute_blocks(attr_part);
-            let attributes = if attr_string.is_empty() {
-                HashMap::new()
-            } else {
-                split_comma_separated_attributes(&attr_string)
-            };
+            let attributes = extract_multiple_attribute_blocks(attr_part);
 
             Ok(Taxon::new_with_attributes(clean_name.to_string(), attributes))
         } else {
@@ -470,18 +462,6 @@ impl NexusParser {
             if parts.len() >= 2 {
                 let number = parts[0].to_string();
                 let mut taxon_name = parts[1..].join(" ");
-
-                // Remove quotes if present
-                // ToDo: are double quotes ever used here?
-                // if (taxon_name.starts_with('"') && taxon_name.ends_with('"'))
-                //     || (taxon_name.starts_with('\'')
-                //         && taxon_name.ends_with('\''))
-                // {
-                //     taxon_name =
-                //         taxon_name[1..taxon_name.len() - 1].to_string();
-                // }
-
-                // taxon_name = taxon_name.replace('_', " ");
 
                 taxon_name = remove_quotes(&taxon_name);
 
@@ -607,10 +587,8 @@ impl NexusParser {
         &self,
         tree: &mut Tree,
     ) -> NexusResult<()> {
-        use std::collections::HashMap;
-
         // Create a lookup map from taxon name to attributes
-        let taxa_attrs: HashMap<String, &HashMap<String, String>> = self
+        let taxa_attrs: HashMap<String, &HashMap<String, Attribute>> = self
             .nexus_file
             .taxa
             .iter()

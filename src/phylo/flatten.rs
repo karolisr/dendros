@@ -1,4 +1,4 @@
-use super::{NodeId, Tree, TreeFloat};
+use super::{Attribute, NodeId, Tree, TreeFloat};
 use rayon::prelude::*;
 use std::{collections::HashMap, sync::Arc};
 
@@ -16,8 +16,8 @@ pub struct Edge {
     pub y: TreeFloat,
     pub is_tip: bool,
     pub edge_idx: usize,
-    pub node_props: HashMap<String, String>,
-    pub branch_props: HashMap<String, String>,
+    pub node_props: HashMap<String, Attribute>,
+    pub branch_props: HashMap<String, Attribute>,
 }
 
 pub(super) fn flatten_tree(tree: &Tree) -> Vec<Edge> {

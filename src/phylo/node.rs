@@ -1,8 +1,47 @@
-use super::TreeFloat;
+use super::{TreeFloat, TreeInt};
 use slotmap::new_key_type;
 use std::{collections::HashMap, fmt::Display, sync::Arc};
 
 new_key_type! { pub struct NodeId; }
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Attribute {
+    Text(String),
+    Decimal(TreeFloat),
+    Integer(TreeInt),
+    Range(TreeFloat, TreeFloat),
+}
+
+impl Display for Attribute {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Attribute::Text(text) => format!("Attribute::Text({text})"),
+                Attribute::Decimal(decimal) =>
+                    format!("Attribute::Decimal({decimal:0.5})"),
+                Attribute::Integer(integer) =>
+                    format!("Attribute::Integer({integer})"),
+                Attribute::Range(decimal_1, decimal_2) => format!(
+                    "Attribute::Range({decimal_1:0.5}, {decimal_2:0.5})"
+                ),
+            }
+        )
+    }
+}
+
+impl From<&str> for Attribute {
+    fn from(s: &str) -> Self {
+        s.to_string().into()
+    }
+}
+
+impl From<String> for Attribute {
+    fn from(s: String) -> Self {
+        Attribute::Text(s)
+    }
+}
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, PartialOrd, Ord, Eq)]
 pub enum NodeType {
@@ -21,8 +60,8 @@ pub struct Node {
     child_ids: Vec<NodeId>,
     branch_length: Option<TreeFloat>,
     node_label: Option<Arc<str>>,
-    node_props: HashMap<String, String>,
-    branch_props: HashMap<String, String>,
+    node_props: HashMap<String, Attribute>,
+    branch_props: HashMap<String, Attribute>,
     node_type: NodeType,
     edge_idx: Option<usize>,
 }
@@ -32,19 +71,22 @@ impl Node {
         Self::default()
     }
 
-    pub fn node_props(&self) -> HashMap<String, String> {
+    pub fn node_props(&self) -> HashMap<String, Attribute> {
         self.node_props.clone()
     }
 
-    pub fn branch_props(&self) -> HashMap<String, String> {
+    pub fn branch_props(&self) -> HashMap<String, Attribute> {
         self.branch_props.clone()
     }
 
-    pub fn set_node_props(&mut self, node_props: HashMap<String, String>) {
+    pub fn set_node_props(&mut self, node_props: HashMap<String, Attribute>) {
         self.node_props = node_props;
     }
 
-    pub fn set_branch_props(&mut self, branch_props: HashMap<String, String>) {
+    pub fn set_branch_props(
+        &mut self,
+        branch_props: HashMap<String, Attribute>,
+    ) {
         self.branch_props = branch_props;
     }
 
