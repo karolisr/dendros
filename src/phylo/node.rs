@@ -1,6 +1,6 @@
 use super::{TreeFloat, TreeInt};
 use slotmap::new_key_type;
-use std::{collections::HashMap, fmt::Display, sync::Arc};
+use std::{collections::HashMap, fmt::Display, str::FromStr, sync::Arc};
 
 new_key_type! { pub struct NodeId; }
 
@@ -39,7 +39,41 @@ impl From<&str> for Attribute {
 
 impl From<String> for Attribute {
     fn from(s: String) -> Self {
-        Attribute::Text(s)
+        if let Ok(integer) = s.parse() {
+            Attribute::Integer(integer)
+        } else if let Ok(decimal) = s.parse() {
+            Attribute::Decimal(decimal)
+        } else if let Ok(Attribute::Range(a, b)) = s.parse() {
+            Attribute::Range(a, b)
+        } else {
+            Attribute::Text(s)
+        }
+    }
+}
+
+impl FromStr for Attribute {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.starts_with('{') && s.ends_with('}') {
+            let split_s = s[1..s.len() - 1].split(',');
+            let r: Vec<&str> = split_s.collect();
+            if r.len() == 2 {
+                if let Ok(a) = r.first().unwrap().parse() {
+                    if let Ok(b) = r.last().unwrap().parse() {
+                        Ok(Attribute::Range(a, b))
+                    } else {
+                        Ok(Attribute::Text(s.to_owned()))
+                    }
+                } else {
+                    Ok(Attribute::Text(s.to_owned()))
+                }
+            } else {
+                Ok(Attribute::Text(s.to_owned()))
+            }
+        } else {
+            Ok(Attribute::Text(s.to_owned()))
+        }
     }
 }
 
