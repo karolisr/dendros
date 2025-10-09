@@ -18,14 +18,11 @@ impl Display for Attribute {
             f,
             "{}",
             match self {
-                Attribute::Text(text) => format!("Attribute::Text({text})"),
-                Attribute::Decimal(decimal) =>
-                    format!("Attribute::Decimal({decimal:0.5})"),
-                Attribute::Integer(integer) =>
-                    format!("Attribute::Integer({integer})"),
-                Attribute::Range(decimal_1, decimal_2) => format!(
-                    "Attribute::Range({decimal_1:0.5}, {decimal_2:0.5})"
-                ),
+                Attribute::Text(text) => text.to_string(),
+                Attribute::Decimal(decimal) => format!("{decimal}"),
+                Attribute::Integer(integer) => format!("{integer}"),
+                Attribute::Range(decimal_1, decimal_2) =>
+                    format!("{{{decimal_1},{decimal_2}}}"),
             }
         )
     }

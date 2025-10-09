@@ -49,48 +49,36 @@ impl QuoteState {
     }
 
     /// Handles single quote parsing with proper escape sequence support.
-    fn handle_single_quote(
-        &mut self,
-        s: &str,
-        i: usize,
-        s_iter: &mut std::str::CharIndices,
-    ) {
+    fn handle_single_quote(&mut self, s: &str, i: usize) -> bool {
         if self.in_double_quotes {
-            return;
+            return false;
         }
 
         if !self.in_single_quotes {
             self.in_single_quotes = true;
-            return;
+            return false;
         }
+
+        self.in_single_quotes = false;
 
         // Check if this is an escaped quote (next char is also a quote).
-        let chars_after: Vec<char> = s[i + 1..].chars().collect();
-        if !chars_after.is_empty() && chars_after[0] == '\'' {
-            // Check if this is truly an escape or an empty string.
-            let next_after_quotes = if chars_after.len() > 1 {
-                chars_after.get(1).copied()
-            } else {
-                None
-            };
-
-            // If the character after the quotes is a delimiter, treat as empty string
-            if let Some(next_char) = next_after_quotes {
-                if matches!(next_char, ',' | ')' | ';' | '(' | ':') {
-                    // This appears to be an empty quoted string.
-                    self.in_single_quotes = false;
-                } else {
-                    // This is an escaped quote within a longer string.
-                    let _ = s_iter.next(); // Advance the iterator past the escaped quote.
+        let mut s_iter_tmp = s[i + 1..].chars();
+        let c1_opt = s_iter_tmp.next();
+        let c2_opt = s_iter_tmp.next();
+        if let Some(c1) = c1_opt {
+            if c1 == '\'' {
+                // Check if this is truly an escape or an empty string.
+                if let Some(c2) = c2_opt {
+                    if !matches!(c2, ',' | ')' | ';' | '(' | ':') {
+                        // This is an escaped quote within a longer string.
+                        self.in_single_quotes = true;
+                        return true;
+                    }
                 }
-            } else {
-                // End of string after quotes - treat as empty string.
-                self.in_single_quotes = false;
             }
-        } else {
-            // This is the end of the quoted string.
-            self.in_single_quotes = false;
         }
+
+        false
     }
 }
 
@@ -155,13 +143,13 @@ impl JointQuoteAndNestingState {
         self.quote_state.in_quotes()
     }
 
-    fn in_single_quotes(&self) -> bool {
-        self.quote_state.in_single_quotes
-    }
+    // fn in_single_quotes(&self) -> bool {
+    //     self.quote_state.in_single_quotes
+    // }
 
-    fn set_in_single_quotes(&mut self, state: bool) {
-        self.quote_state.in_single_quotes = state;
-    }
+    // fn set_in_single_quotes(&mut self, state: bool) {
+    //     self.quote_state.in_single_quotes = state;
+    // }
 
     fn at_top_level(&self) -> bool {
         self.nesting_state.at_top_level()
@@ -245,7 +233,8 @@ fn newick_string(tree: &Tree) -> String {
 
         if let Some(name) = tree.name(first_node_id) {
             let name = name.replace(" ", "_");
-            newick = format!("{newick}{name}");
+            newick.push_str(&name);
+            // newick = format!("{newick}'{name}'");
         }
 
         let node_props = tree.node_props(*first_node_id);
@@ -278,6 +267,7 @@ fn _newick_string(child_nodes: Vec<&Node>, tree: &Tree) -> String {
         if let Some(name) = child.node_label() {
             let name = name.replace(" ", "_");
             newick.push_str(&name);
+            // newick = format!("{newick}'{name}'");
         }
 
         if let Some(child_id) = child.node_id() {
@@ -368,9 +358,13 @@ fn _parse_newick(s: String, parent_id: Option<NodeId>, mut tree: Tree) -> Tree {
 
         match character {
             '\'' => {
-                state
-                    .quote_state
-                    .handle_single_quote(&s, state.position, &mut s_iter);
+                let is_escaped_single_quote =
+                    state.quote_state.handle_single_quote(&s, state.position);
+
+                if is_escaped_single_quote {
+                    // Advance the iterator past the escaped quote.
+                    _ = s_iter.next();
+                }
             }
             '"' => {
                 _ = state.quote_state.update_quote_state('"');
@@ -404,7 +398,7 @@ fn _parse_newick(s: String, parent_id: Option<NodeId>, mut tree: Tree) -> Tree {
     }
 
     if !state.was_open {
-        let _ = tree.add_nodes(nodes_from_string(s.as_str(), ","), parent_id);
+        let _ = tree.add_nodes(nodes_from_string(s.as_str()), parent_id);
     }
     tree
 }
@@ -420,22 +414,10 @@ fn parser_find_label_end(s: &str) -> usize {
 
         match joint_qn_state.classify_character(c) {
             CharacterType::Quote => {
-                // Handle escaped single quotes.
-                if joint_qn_state.in_single_quotes() && c == '\'' {
-                    if let Some(next_char) = chars.get(i + 1) {
-                        if *next_char == '\'' {
-                            // Check if this is an escape sequence or empty string.
-                            if let Some(after_quotes) = chars.get(i + 2) {
-                                if is_structural_delimiter(*after_quotes) {
-                                    joint_qn_state.set_in_single_quotes(false);
-                                } else {
-                                    i += 1;
-                                }
-                            } else {
-                                joint_qn_state.set_in_single_quotes(false);
-                            }
-                        }
-                    }
+                let is_escaped_single_quote =
+                    joint_qn_state.quote_state.handle_single_quote(s, i);
+                if is_escaped_single_quote {
+                    i += 1;
                 }
             }
             CharacterType::Delimiter => {
@@ -474,10 +456,8 @@ fn parser_handle_comma_cases(
         && !state.was_open
         && s_iter.as_str().starts_with('(')
     {
-        let _ = tree.add_nodes(
-            nodes_from_string(&s[0..state.position], ","),
-            parent_id,
-        );
+        let _ =
+            tree.add_nodes(nodes_from_string(&s[0..state.position]), parent_id);
     }
 }
 
@@ -515,7 +495,7 @@ fn parser_handle_nodes_without_parentheses(
     if !no_parens.is_empty()
         || (*i == s.len() && s.ends_with(',') && no_parens.is_empty())
     {
-        let _ = tree.add_nodes(nodes_from_string(no_parens, ","), parent_id);
+        let _ = tree.add_nodes(nodes_from_string(no_parens), parent_id);
     }
 }
 
@@ -523,27 +503,17 @@ fn nodes<'a>(names: impl Into<Vec<&'a str>>) -> Vec<Node> {
     names.into().iter().map(|&n| node(n)).collect()
 }
 
-fn nodes_from_string<'a>(
-    s: impl Into<&'a str>,
-    sep: impl Into<&'a str>,
-) -> Vec<Node> {
+fn nodes_from_string<'a>(s: impl Into<&'a str>) -> Vec<Node> {
     let s: &str = s.into();
-    let sep: &str = sep.into();
-
-    if sep == "," {
-        let nds = split_respecting_brackets(s, ',');
-        nodes(nds)
-    } else {
-        let nds: Vec<&str> = s.split(sep).collect();
-        nodes(nds)
-    }
+    let nds = split_respecting_brackets(s, ',');
+    nodes(nds)
 }
 
 fn node<'a>(newick_label: impl Into<&'a str>) -> Node {
+    let mut node = Node::default();
+
     let (node_lab, branch_length, branch_attrs) =
         parse_newick_label(newick_label);
-
-    let mut node = Node::default();
 
     if let Some(node_lab) = node_lab {
         if let Some((label, attrs)) = split_label_and_attributes(&node_lab) {
@@ -920,16 +890,16 @@ fn parse_rich_newick_extended_fields(
 
     let mut rich_attrs: HashMap<String, Attribute> = HashMap::new();
     if parts.len() > 1 && !parts[1].is_empty() {
-        _ = rich_attrs.insert(
-            "bootstrap".to_string(),
-            Attribute::Integer(parts[1].parse().unwrap()),
-        );
+        if let Ok(attr) = parts[1].parse() {
+            _ = rich_attrs
+                .insert("bootstrap".to_string(), Attribute::Integer(attr));
+        }
     }
     if parts.len() > 2 && !parts[2].is_empty() {
-        _ = rich_attrs.insert(
-            "probability".to_string(),
-            Attribute::Decimal(parts[2].parse().unwrap()),
-        );
+        if let Ok(attr) = parts[2].parse() {
+            _ = rich_attrs
+                .insert("probability".to_string(), Attribute::Decimal(attr));
+        }
     }
 
     (branch_length, rich_attrs)

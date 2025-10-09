@@ -9,7 +9,7 @@
     readme="README.md"
     repository="https://github.com/karolisr/dendros"
     rust-version="1.88"
-    version="0.7.0"
+    version="0.8.0"
 
 [lib]
     crate-type=["lib"]
@@ -27,6 +27,10 @@
 [[bench]]
     harness=false
     name="newick_parser"
+
+[[bench]]
+    harness=false
+    name="nexus_parser"
 
 [profile.dev] # ------------------------------------------------------------------------------------
     codegen-units=6       # 256

@@ -31,7 +31,8 @@ fn tree_info(tree_name: &str, tree: &Tree) {
     println!(" Tree: {tree_name}");
     println!(" Tips: {}", tree.tip_count_all());
     println!("Nodes: {}", tree.node_count_all());
-    println!("=============================================================\n");
+    println!("=============================================================");
+    println!();
 
     tree.node_ids_all().iter().for_each(|&id| {
         let mut node_props: Vec<(String, Attribute)> = tree
@@ -82,14 +83,23 @@ fn tree_info(tree_name: &str, tree: &Tree) {
 
         println!();
     });
+
+    println!("=============================================================");
+    println!(" Tree: {tree_name}");
+    println!(" Tips: {}", tree.tip_count_all());
+    println!("Nodes: {}", tree.node_count_all());
+    println!("=============================================================");
+    println!();
 }
 
 fn newick_files(file_paths: &mut Vec<PathBuf>) {
-    let file_path_strs: [&str; 0] = [
-        // "./tests/data/tree01.tre",
-        // "./tests/data/Czech_Huerta-Cepas_Stamatakis_2017/Czech_Huerta-Cepas_Stamatakis_2017_unrooted.newick",
-        // "./tests/data/Czech_Huerta-Cepas_Stamatakis_2017/Czech_Huerta-Cepas_Stamatakis_2017_unrooted__comments.newick",
-        // "./tests/data/Czech_Huerta-Cepas_Stamatakis_2017/Czech_Huerta-Cepas_Stamatakis_2017_unrooted__node_labels.newick",
+    let file_path_strs: [&str; 6] = [
+        "./tests/data/influenza.tre",
+        "./tests/data/influenza.no.single.quotes.on.tips.tre",
+        "./tests/data/tree01.tre",
+        "./tests/data/Czech_Huerta-Cepas_Stamatakis_2017/Czech_Huerta-Cepas_Stamatakis_2017_unrooted.newick",
+        "./tests/data/Czech_Huerta-Cepas_Stamatakis_2017/Czech_Huerta-Cepas_Stamatakis_2017_unrooted__comments.newick",
+        "./tests/data/Czech_Huerta-Cepas_Stamatakis_2017/Czech_Huerta-Cepas_Stamatakis_2017_unrooted__node_labels.newick",
         // "./tests/data/iqtree/turtle_aa.fasta.treefile.cf.tree.newick",
         // "./tests/data/raxml/bestTree.newick",
         // "./tests/data/raxml/bipartitions.newick",
@@ -103,10 +113,10 @@ fn newick_files(file_paths: &mut Vec<PathBuf>) {
 }
 
 fn nexus_files(file_paths: &mut Vec<PathBuf>) {
-    let file_path_strs: [&str; 1] = [
+    let file_path_strs: [&str; 0] = [
         // "./tests/data/carnivore.tree",
         // "./tests/data/influenza.tree",
-        "./tests/data/iqtree/turtle_aa.fasta.treefile.cf.tree.nex",
+        // "./tests/data/iqtree/turtle_aa.fasta.treefile.cf.tree.nex",
         // "./tests/data/mrbayes/run_1.t",
     ];
 
