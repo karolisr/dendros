@@ -1,15 +1,37 @@
 use super::{TreeFloat, TreeInt};
 use slotmap::new_key_type;
-use std::{collections::HashMap, fmt::Display, str::FromStr, sync::Arc};
+use std::{
+    collections::HashMap,
+    fmt::{Debug, Display},
+    str::FromStr,
+    sync::Arc,
+};
 
 new_key_type! { pub struct NodeId; }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub enum Attribute {
     Text(String),
     Decimal(TreeFloat),
     Integer(TreeInt),
     Range(TreeFloat, TreeFloat),
+}
+
+impl Debug for Attribute {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Text(arg0) => f.debug_tuple("Text").field(arg0).finish(),
+            Self::Decimal(arg0) => {
+                f.debug_tuple("Decimal").field(arg0).finish()
+            }
+            Self::Integer(arg0) => {
+                f.debug_tuple("Integer").field(arg0).finish()
+            }
+            Self::Range(arg0, arg1) => {
+                f.debug_tuple("Range").field(arg0).field(arg1).finish()
+            }
+        }
+    }
 }
 
 impl Display for Attribute {
