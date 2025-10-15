@@ -1,1 +1,8 @@
-tests/data/ linguist-generated
+tests/data/ linguist-generated=true
+*.t linguist-detectable=false
+*.tre linguist-detectable=false
+*.tree linguist-detectable=false
+*.nex linguist-detectable=false
+*.nexus linguist-detectable=false
+*.csv linguist-detectable=false
+*.tsv linguist-detectable=false
