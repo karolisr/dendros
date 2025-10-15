@@ -13,17 +13,17 @@ set -o errtrace
 trap 'echo Error at line: $LINENO' ERR
 # -------------------------------------------
 
-cargo fmt && \
+cargo fmt
 
-cargo check --profile dev && \
-cargo clippy --profile dev && \
-cargo build --profile dev && \
+cargo check --all-targets --profile dev
+cargo clippy --all-targets --profile dev
+cargo build --all-targets --profile dev
 
-cargo check --profile release && \
-cargo clippy --profile release && \
-cargo build --profile release && \
+cargo check --all-targets --profile release
+cargo clippy --all-targets --profile release
+cargo build --all-targets --profile release
 
-cargo test --tests --profile dev && \
-cargo test --tests --profile release && \
+cargo test --tests --profile dev
+cargo test --tests --profile release
 
 echo -e "OK"
