@@ -9,7 +9,7 @@
     readme="README.md"
     repository="https://github.com/karolisr/dendros"
     rust-version="1.88"
-    version="0.8.0"
+    version="0.9.0"
 
 [lib]
     crate-type=["lib"]
