@@ -1,4 +1,6 @@
-use super::newick::{extract_multiple_attribute_blocks, remove_quotes};
+use super::newick::{
+    extract_multiple_attribute_blocks, merge_attributes, remove_quotes,
+};
 use crate::{Attribute, Tree, parse_newick};
 use std::collections::HashMap;
 
@@ -63,7 +65,7 @@ impl NexusFile {
         }
     }
 
-    pub fn count_of_trees(&self) -> usize {
+    pub fn tree_count(&self) -> usize {
         self.trees.len()
     }
 
@@ -75,35 +77,35 @@ impl NexusFile {
         self.trees.get(name)
     }
 
-    pub fn count_of_taxa(&self) -> usize {
+    pub fn taxon_count(&self) -> usize {
         self.taxa.len()
     }
 
-    pub fn taxa_names(&self) -> Vec<&String> {
-        self.taxa.iter().map(|t| &t.name).collect()
+    pub fn taxon_labels(&self) -> Vec<&String> {
+        self.taxa.iter().map(|taxon| &taxon.label).collect()
     }
 
-    pub fn taxon(&self, name: &str) -> Option<&Taxon> {
-        self.taxa.iter().find(|t| t.name == name)
+    pub fn taxon(&self, label: &str) -> Option<&Taxon> {
+        self.taxa.iter().find(|taxon| taxon.label == label)
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct Taxon {
-    pub name: String,
+    pub label: String,
     pub attributes: HashMap<String, Attribute>,
 }
 
 impl Taxon {
-    pub fn new(name: String) -> Self {
-        Self { name, attributes: HashMap::new() }
+    pub fn new(label: String) -> Self {
+        Self { label, attributes: HashMap::new() }
     }
 
     pub fn new_with_attributes(
-        name: String,
+        label: String,
         attributes: HashMap<String, Attribute>,
     ) -> Self {
-        Self { name, attributes }
+        Self { label, attributes }
     }
 }
 
@@ -111,7 +113,7 @@ pub(crate) struct NexusParser {
     lines: Vec<String>,
     current_line: usize,
     nexus_file: NexusFile,
-    expected_ntax: Option<usize>,
+    expected_taxa_count: Option<usize>,
     translate_table: Option<HashMap<String, String>>,
 }
 
@@ -124,7 +126,7 @@ impl NexusParser {
             lines,
             current_line: 0,
             nexus_file: NexusFile::new(),
-            expected_ntax: None,
+            expected_taxa_count: None,
             translate_table: None,
         }
     }
@@ -151,9 +153,13 @@ impl NexusParser {
     }
 
     fn has_nexus_header(&mut self) -> bool {
-        for i in 0..std::cmp::min(5, self.lines.len()) {
-            if self.lines[i].trim().to_uppercase().starts_with("#NEXUS") {
-                self.current_line = i + 1;
+        for line_index in 0..std::cmp::min(5, self.lines.len()) {
+            if self.lines[line_index]
+                .trim()
+                .to_uppercase()
+                .starts_with("#NEXUS")
+            {
+                self.current_line = line_index + 1;
                 return true;
             }
         }
@@ -189,12 +195,10 @@ impl NexusParser {
 
     fn parse_taxa_block(&mut self) -> NexusResult<()> {
         while !self.is_at_end() {
-            let line = self.current_line().to_uppercase();
-
-            if line.starts_with("END") {
+            if self.is_block_end() {
                 self.advance_line();
-                // Validate taxa count if ntax was specified.
-                if let Some(expected) = self.expected_ntax {
+                // Validate taxa count if taxa count was specified.
+                if let Some(expected) = self.expected_taxa_count {
                     let actual = self.nexus_file.taxa.len();
                     if expected != actual {
                         return Err(NexusError::TaxaCountMismatch {
@@ -206,6 +210,7 @@ impl NexusParser {
                 return Ok(());
             }
 
+            let line = self.current_line().to_uppercase();
             if line.starts_with("DIMENSIONS") {
                 self.parse_dimensions_line()?;
             } else if line.starts_with("TAXLABELS") {
@@ -226,34 +231,30 @@ impl NexusParser {
             let after_ntax = &line[ntax_pos + 5..];
 
             let mut value_str = String::new();
-            for ch in after_ntax.chars() {
-                if ch == ';' || ch.is_whitespace() {
+            for character in after_ntax.chars() {
+                if character == ';' || character.is_whitespace() {
                     break;
                 } else {
-                    value_str.push(ch);
+                    value_str.push(character);
                 }
             }
 
             if !value_str.is_empty() {
                 match value_str.parse::<usize>() {
-                    Ok(ntax) => {
-                        self.expected_ntax = Some(ntax);
+                    Ok(taxa_count) => {
+                        self.expected_taxa_count = Some(taxa_count);
                     }
                     Err(_) => {
-                        return Err(NexusError::ParseError {
-                            line: self.current_line + 1,
-                            message: format!(
-                                "Invalid ntax value: {}",
-                                value_str
-                            ),
-                        });
+                        return Err(self.parse_error(format!(
+                            "Invalid taxon count value: {}",
+                            value_str
+                        )));
                     }
                 }
             } else {
-                return Err(NexusError::ParseError {
-                    line: self.current_line + 1,
-                    message: "Missing ntax value after 'ntax='".to_string(),
-                });
+                return Err(self.parse_error(
+                    "Missing taxon count value after 'ntax='".to_string(),
+                ));
             }
         }
 
@@ -274,30 +275,11 @@ impl NexusParser {
 
         self.advance_line();
 
-        let mut current_line_content = String::new();
+        let content = self.collect_multiline_content(|line| {
+            line == ";" || line.to_uppercase().starts_with("END")
+        });
 
-        while !self.is_at_end() {
-            let line = self.current_line();
-
-            if line.trim() == ";"
-                || line.trim().to_uppercase().starts_with("END")
-            {
-                break;
-            }
-
-            current_line_content.push(' ');
-            current_line_content.push_str(line.trim());
-
-            if line.trim().ends_with(';') {
-                current_line_content =
-                    current_line_content.trim_end_matches(';').to_string();
-                break;
-            }
-
-            self.advance_line();
-        }
-
-        self.parse_taxa_from_string(&current_line_content)?;
+        self.parse_taxa_from_string(&content)?;
 
         if !self.is_at_end() && self.current_line().trim() == ";" {
             self.advance_line();
@@ -320,12 +302,12 @@ impl NexusParser {
         let mut current_taxon_with_attrs = String::new();
         let mut in_quotes = false;
 
-        for ch in content_with_comments_removed.chars() {
-            match ch {
+        for character in content_with_comments_removed.chars() {
+            match character {
                 '\'' => {
                     // Toggle quote state and include the quote.
                     in_quotes = !in_quotes;
-                    current_taxon_with_attrs.push(ch);
+                    current_taxon_with_attrs.push(character);
                 }
                 ' ' | '\t' | '\n' if !in_quotes => {
                     if !current_taxon_with_attrs.trim().is_empty()
@@ -338,7 +320,7 @@ impl NexusParser {
                     }
                 }
                 _ => {
-                    current_taxon_with_attrs.push(ch);
+                    current_taxon_with_attrs.push(character);
                 }
             }
         }
@@ -362,37 +344,25 @@ impl NexusParser {
 
         // Check if there are attributes.
         if let Some(bracket_start) = trimmed.rfind('[') {
-            let name_part = trimmed[..bracket_start].trim();
+            let label_part = trimmed[..bracket_start].trim();
             let attr_part = &trimmed[bracket_start..];
 
-            // Remove quotes from name if present.
-            let clean_name =
-                if name_part.starts_with('\'') && name_part.ends_with('\'') {
-                    &name_part[1..name_part.len() - 1]
-                } else {
-                    name_part
-                };
+            // Remove quotes from label if present.
+            let clean_label = remove_quotes(label_part);
 
             let attributes = extract_multiple_attribute_blocks(attr_part);
 
-            Ok(Taxon::new_with_attributes(clean_name.to_string(), attributes))
+            Ok(Taxon::new_with_attributes(clean_label.to_string(), attributes))
         } else {
-            let clean_name =
-                if trimmed.starts_with('\'') && trimmed.ends_with('\'') {
-                    &trimmed[1..trimmed.len() - 1]
-                } else {
-                    trimmed
-                };
+            let clean_label = remove_quotes(trimmed);
 
-            Ok(Taxon::new(clean_name.to_string()))
+            Ok(Taxon::new(clean_label))
         }
     }
 
     fn parse_trees_block(&mut self) -> NexusResult<()> {
         while !self.is_at_end() {
-            let line = self.current_line().trim().to_string();
-
-            if line.to_uppercase().starts_with("END") {
+            if self.is_block_end() {
                 if let Some(translate_table) = &self.translate_table {
                     self.nexus_file.translate_table =
                         Some(translate_table.clone());
@@ -401,6 +371,7 @@ impl NexusParser {
                 return Ok(());
             }
 
+            let line = self.current_line().trim().to_string();
             if line.to_uppercase().starts_with("TRANSLATE") {
                 self.parse_translate_command()?;
                 continue;
@@ -457,15 +428,15 @@ impl NexusParser {
                 continue;
             }
 
-            // Split by whitespace to separate number from name
+            // Split by whitespace to separate number from label
             let parts: Vec<&str> = entry.split_whitespace().collect();
             if parts.len() >= 2 {
                 let number = parts[0].to_string();
-                let mut taxon_name = parts[1..].join(" ");
+                let mut taxon_label = parts[1..].join(" ");
 
-                taxon_name = remove_quotes(&taxon_name);
+                taxon_label = remove_quotes(&taxon_label);
 
-                let _ = translate_table.insert(number, taxon_name);
+                let _ = translate_table.insert(number, taxon_label);
             }
         }
 
@@ -587,12 +558,12 @@ impl NexusParser {
         &self,
         tree: &mut Tree,
     ) -> NexusResult<()> {
-        // Create a lookup map from taxon name to attributes
+        // Create a lookup map from taxon label to attributes
         let taxa_attrs: HashMap<String, &HashMap<String, Attribute>> = self
             .nexus_file
             .taxa
             .iter()
-            .map(|taxon| (taxon.name.clone(), &taxon.attributes))
+            .map(|taxon| (taxon.label.clone(), &taxon.attributes))
             .collect();
 
         // Iterate through all tree nodes and merge attributes for matching taxa
@@ -602,19 +573,19 @@ impl NexusParser {
                     // Check if this node label matches a taxon with attributes
                     if let Some(taxon_attrs) = taxa_attrs.get(label.as_ref()) {
                         if !taxon_attrs.is_empty() {
-                            // Get current node properties
-                            let mut current_props = tree.node_props(node_id);
+                            // Get current node attributes
+                            let current_attributes =
+                                tree.node_attributes(node_id);
 
-                            // Merge taxa attributes into node properties
-                            for (key, value) in taxon_attrs.iter() {
-                                let _ = current_props
-                                    .insert(key.clone(), value.clone());
-                            }
+                            // Use the centralized merge_attributes function
+                            let merged_attributes = merge_attributes(
+                                current_attributes, taxon_attrs,
+                            );
 
-                            // Update the node with merged properties
+                            // Update the node with merged attributes
                             if let Some(node_mut) = tree.node_mut(Some(node_id))
                             {
-                                node_mut.set_node_props(current_props);
+                                node_mut.set_node_attributes(merged_attributes);
                             }
                         }
                     }
@@ -632,8 +603,7 @@ impl NexusParser {
 
     fn skip_to_end_block(&mut self) -> NexusResult<()> {
         while !self.is_at_end() {
-            let line = self.current_line().to_uppercase();
-            if line.starts_with("END") {
+            if self.is_block_end() {
                 self.advance_line();
                 return Ok(());
             }
@@ -647,6 +617,47 @@ impl NexusParser {
         while !self.is_at_end() && self.current_line().trim().is_empty() {
             self.advance_line();
         }
+    }
+
+    /// Collect content from current position until a semicolon or
+    /// a specified terminator is found.
+    fn collect_multiline_content(
+        &mut self,
+        terminator_check: impl Fn(&str) -> bool,
+    ) -> String {
+        let mut content = String::new();
+
+        while !self.is_at_end() {
+            let line = self.current_line().trim();
+
+            if terminator_check(line) {
+                break;
+            }
+
+            if !content.is_empty() {
+                content.push(' ');
+            }
+            content.push_str(line);
+
+            if line.ends_with(';') {
+                content = content.trim_end_matches(';').to_string();
+                break;
+            }
+
+            self.advance_line();
+        }
+
+        content
+    }
+
+    /// Create a parse error for the current line position.
+    fn parse_error(&self, message: String) -> NexusError {
+        NexusError::ParseError { line: self.current_line + 1, message }
+    }
+
+    /// Check if current line indicates end of a block.
+    fn is_block_end(&self) -> bool {
+        self.current_line().to_uppercase().starts_with("END")
     }
 
     fn current_line(&self) -> &str {
@@ -666,51 +677,50 @@ impl NexusParser {
     }
 }
 
-/// Remove NEXUS comments (square bracket comments) from a line
-/// This is more selective than the original remove_comments - it only removes
-/// comments that are clearly NEXUS-level, not node attributes
+/// Remove NEXUS comments (square bracket comments) from a line.
+/// Only removes comments that are clearly NEXUS-level, not node attributes.
 fn remove_nexus_comments(line: &str) -> String {
     let mut result = String::new();
-    let mut i = 0;
+    let mut char_index = 0;
     let chars: Vec<char> = line.chars().collect();
 
-    while i < chars.len() {
-        let ch = chars[i];
+    while char_index < chars.len() {
+        let character = chars[char_index];
 
-        if ch == '[' {
-            // Extract the content of this bracket
-            let mut j = i + 1;
+        if character == '[' {
+            // Extract the content of this bracket.
+            let mut bracket_index = char_index + 1;
             let mut local_depth = 1;
             let mut bracket_content = String::new();
 
-            while j < chars.len() && local_depth > 0 {
-                if chars[j] == '[' {
+            while bracket_index < chars.len() && local_depth > 0 {
+                if chars[bracket_index] == '[' {
                     local_depth += 1;
-                    bracket_content.push(chars[j]);
-                } else if chars[j] == ']' {
+                    bracket_content.push(chars[bracket_index]);
+                } else if chars[bracket_index] == ']' {
                     local_depth -= 1;
                     if local_depth > 0 {
-                        bracket_content.push(chars[j]);
+                        bracket_content.push(chars[bracket_index]);
                     }
                 } else {
-                    bracket_content.push(chars[j]);
+                    bracket_content.push(chars[bracket_index]);
                 }
-                j += 1;
+                bracket_index += 1;
             }
 
             let should_preserve = bracket_content.starts_with('&');
 
             if should_preserve {
-                // Preserve this bracket and its content
-                result.push(ch);
+                // Preserve this bracket and its content.
+                result.push(character);
                 result.push_str(&bracket_content);
                 result.push(']');
             }
-            // Skip to after the closing bracket
-            i = j;
+            // Skip to after the closing bracket.
+            char_index = bracket_index;
         } else {
-            result.push(ch);
-            i += 1;
+            result.push(character);
+            char_index += 1;
         }
     }
 

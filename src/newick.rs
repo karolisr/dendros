@@ -5,24 +5,19 @@ mod validation;
 use std::collections::HashMap;
 
 use super::{Attribute, Node, NodeId, Tree, TreeFloat};
+pub use attributes::remove_quotes;
 pub(crate) use attributes::{
-    combine_attributes, extract_multiple_attribute_blocks,
-    split_label_and_attributes,
+    combine_attributes, extract_multiple_attribute_blocks, merge_attributes,
+    split_label_and_attributes, split_respecting_brackets,
 };
 use validation::is_valid_newick_structure;
 
 /// Checks if a character is a NEWICK structural delimiter.
-fn is_structural_delimiter(c: char) -> bool {
-    matches!(c, ';' | '(' | ')' | ',')
+fn is_structural_delimiter(character: char) -> bool {
+    matches!(character, ';' | '(' | ')' | ',')
 }
 
 /// Manages the parsing state for quote handling during NEWICK parsing.
-///
-/// NEWICK "format" supports both single and double quotes for node labels:
-/// - Single quotes: 'label with spaces'.
-/// - Double quotes: "label with spaces".
-/// - Escaped quotes: 'can''t' or "say ""hello""".
-/// - Quotes cannot be nested (only one type active at a time).
 #[derive(Debug, Clone, Default)]
 struct QuoteState {
     in_single_quotes: bool,
@@ -34,8 +29,8 @@ impl QuoteState {
         self.in_single_quotes || self.in_double_quotes
     }
 
-    fn update_quote_state(&mut self, c: char) -> bool {
-        match c {
+    fn update_quote_state(&mut self, character: char) -> bool {
+        match character {
             '\'' if !self.in_double_quotes => {
                 self.in_single_quotes = !self.in_single_quotes;
                 true
@@ -49,7 +44,11 @@ impl QuoteState {
     }
 
     /// Handles single quote parsing with proper escape sequence support.
-    fn handle_single_quote(&mut self, s: &str, i: usize) -> bool {
+    fn handle_single_quote(
+        &mut self,
+        input_string: &str,
+        position: usize,
+    ) -> bool {
         if self.in_double_quotes {
             return false;
         }
@@ -62,14 +61,14 @@ impl QuoteState {
         self.in_single_quotes = false;
 
         // Check if this is an escaped quote (next char is also a quote).
-        let mut s_iter_tmp = s[i + 1..].chars();
-        let c1_opt = s_iter_tmp.next();
-        let c2_opt = s_iter_tmp.next();
-        if let Some(c1) = c1_opt {
-            if c1 == '\'' {
+        let mut chars_ahead = input_string[position + 1..].chars();
+        let next_char = chars_ahead.next();
+        let char_after_next = chars_ahead.next();
+        if let Some(next_char_val) = next_char {
+            if next_char_val == '\'' {
                 // Check if this is truly an escape or an empty string.
-                if let Some(c2) = c2_opt {
-                    if !matches!(c2, ',' | ')' | ';' | '(' | ':') {
+                if let Some(char_after_next_val) = char_after_next {
+                    if !is_structural_delimiter(char_after_next_val) {
                         // This is an escaped quote within a longer string.
                         self.in_single_quotes = true;
                         return true;
@@ -82,37 +81,46 @@ impl QuoteState {
     }
 }
 
+/// Tracks nesting depth for brackets and parentheses during parsing.
+///
+/// Essential for correctly parsing NEWICK format with annotations in brackets
+/// and nested tree structures in parentheses. Delimiters inside nested
+/// structures should not be treated as structural separators.
 #[derive(Debug, Clone, Default)]
 struct NestingState {
-    bracket_depth: i32,
-    paren_depth: i32,
+    square_bracket_depth: i32,
+    parenthesis_depth: i32,
 }
 
 impl NestingState {
     fn at_top_level(&self) -> bool {
-        self.bracket_depth == 0 && self.paren_depth == 0
+        self.square_bracket_depth == 0 && self.parenthesis_depth == 0
     }
 
-    fn update_nesting(&mut self, c: char, quote_state: &QuoteState) -> bool {
+    fn update_nesting(
+        &mut self,
+        character: char,
+        quote_state: &QuoteState,
+    ) -> bool {
         if quote_state.in_quotes() {
             return false;
         }
 
-        match c {
+        match character {
             '[' => {
-                self.bracket_depth += 1;
+                self.square_bracket_depth += 1;
                 true
             }
             ']' => {
-                self.bracket_depth -= 1;
+                self.square_bracket_depth -= 1;
                 true
             }
             '(' => {
-                self.paren_depth += 1;
+                self.parenthesis_depth += 1;
                 true
             }
             ')' => {
-                self.paren_depth -= 1;
+                self.parenthesis_depth -= 1;
                 true
             }
             _ => false,
@@ -120,22 +128,22 @@ impl NestingState {
     }
 }
 
-#[derive(Debug, PartialEq)]
-enum CharacterType {
-    Quote,
-    Bracket,
-    Delimiter,
-    Other,
-}
-
+/// Combines quote and nesting state for comprehensive character parsing.
+///
+/// This composite state tracks both quoting (for proper string handling)
+/// and nesting depth (for brackets and parentheses) to ensure correct
+/// parsing of complex NEWICK structures with annotations.
+///
+/// Made public within the newick module for potential reuse in validation
+/// and attribute parsing logic.
 #[derive(Debug, Clone, Default)]
-struct JointQuoteAndNestingState {
+pub(crate) struct CharacterParseState {
     quote_state: QuoteState,
     nesting_state: NestingState,
 }
 
-impl JointQuoteAndNestingState {
-    fn new() -> Self {
+impl CharacterParseState {
+    pub(crate) fn new() -> Self {
         Self::default()
     }
 
@@ -143,38 +151,80 @@ impl JointQuoteAndNestingState {
         self.quote_state.in_quotes()
     }
 
-    // fn in_single_quotes(&self) -> bool {
-    //     self.quote_state.in_single_quotes
-    // }
-
-    // fn set_in_single_quotes(&mut self, state: bool) {
-    //     self.quote_state.in_single_quotes = state;
-    // }
-
     fn at_top_level(&self) -> bool {
         self.nesting_state.at_top_level()
     }
 
-    fn classify_character(&mut self, c: char) -> CharacterType {
-        if self.quote_state.update_quote_state(c) {
-            return CharacterType::Quote;
-        }
+    // For comma parsing, we only care about parentheses depth, not bracket depth.
+    fn at_comma_parsing_level(&self) -> bool {
+        self.nesting_state.parenthesis_depth == 0
+    }
 
-        if self.nesting_state.update_nesting(c, &self.quote_state) {
-            return CharacterType::Bracket;
-        }
+    /// Update nesting state for the given character, using the internal quote state.
+    fn update_nesting(&mut self, character: char) -> bool {
+        self.nesting_state.update_nesting(character, &self.quote_state)
+    }
 
-        if self.at_top_level()
-            && !self.in_quotes()
-            && is_structural_delimiter(c)
-        {
-            return CharacterType::Delimiter;
+    /// Process a quote character, handling both simple and escaped quotes.
+    /// Returns (quote_updated, skip_next_char) tuple.
+    fn process_quote_character(
+        &mut self,
+        character: char,
+        input_string: &str,
+        position: usize,
+    ) -> (bool, bool) {
+        match character {
+            '\'' => {
+                let is_escaped = self
+                    .quote_state
+                    .handle_single_quote(input_string, position);
+                (true, is_escaped)
+            }
+            '"' => {
+                let quote_updated =
+                    self.quote_state.update_quote_state(character);
+                (quote_updated, false)
+            }
+            _ => (false, false),
         }
+    }
 
-        CharacterType::Other
+    /// Update quote state for a character (simpler version without escape handling).
+    fn update_quote_state(&mut self, character: char) -> bool {
+        self.quote_state.update_quote_state(character)
+    }
+
+    /// Check if a character is a structural delimiter and we're not inside quotes.
+    fn is_unquoted_structural_delimiter(&self, character: char) -> bool {
+        !self.in_quotes() && is_structural_delimiter(character)
+    }
+
+    /// Process bracket characters if not in quotes. Returns true if processed.
+    fn process_bracket_if_unquoted(&mut self, character: char) -> bool {
+        if !self.in_quotes() && matches!(character, '[' | ']') {
+            _ = self.update_nesting(character);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Check if we can process parentheses (not in quotes).
+    fn can_process_parentheses(&self) -> bool {
+        !self.in_quotes()
+    }
+
+    /// Check if we can process comma (not in quotes and at comma parsing level).
+    fn can_process_comma(&self) -> bool {
+        !self.in_quotes() && self.at_comma_parsing_level()
     }
 }
 
+/// Manages overall parsing state for recursive NEWICK tree processing.
+///
+/// Tracks position within the input string, parentheses balancing,
+/// and character-level parsing state. Essential for the recursive
+/// descent parser that handles nested tree structures.
 #[derive(Debug, Default)]
 struct ParserState {
     position: usize,
@@ -182,14 +232,10 @@ struct ParserState {
     open_count: i32,
     is_open: bool,
     was_open: bool,
-    quote_state: QuoteState,
+    char_state: CharacterParseState,
 }
 
 impl ParserState {
-    fn is_in_quotes(&self) -> bool {
-        self.quote_state.in_quotes()
-    }
-
     fn handle_open_paren(&mut self, position: usize) {
         self.open_count += 1;
         if !self.is_open {
@@ -207,8 +253,94 @@ impl ParserState {
         }
         false
     }
+
+    /// Process opening parenthesis, updating both nesting and parser state.
+    fn process_open_paren(&mut self, position: usize) {
+        _ = self.char_state.update_nesting('(');
+        self.handle_open_paren(position);
+    }
+
+    /// Process closing parenthesis, updating both nesting and parser state.
+    /// Returns true if this closes a complete subgroup.
+    fn process_close_paren(&mut self) -> bool {
+        _ = self.char_state.update_nesting(')');
+        self.handle_close_paren()
+    }
+
+    /// Handle comma cases in parsing.
+    fn handle_comma_cases(
+        &mut self,
+        s: &str,
+        parent_id: Option<NodeId>,
+        tree: &mut Tree,
+        char_iterator: &mut std::str::CharIndices,
+    ) {
+        // Handle nodes not surrounded by parentheses that occur next to nodes that are.
+        if !self.is_open && self.was_open {
+            handle_nodes_without_parentheses(
+                s, &mut self.position, parent_id, tree,
+            );
+        }
+        // Handle simple comma-separated lists before parentheses.
+        else if !self.is_open
+            && !self.was_open
+            && char_iterator.as_str().starts_with('(')
+        {
+            let _ = tree.add_nodes(
+                create_nodes_from_comma_separated_raw_labels(
+                    &s[0..self.position],
+                ),
+                parent_id,
+            );
+        }
+    }
+
+    /// Process the label and subtree after a closing parenthesis.
+    fn process_closing_paren_label_and_subtree(
+        &mut self,
+        s: &str,
+        parent_id: Option<NodeId>,
+        mut tree: Tree,
+    ) -> Tree {
+        let label_end = find_node_label_end(&s[self.position + 1..]);
+        let label = &s[self.position + 1..self.position + 1 + label_end];
+        let child_id =
+            tree.add_node(create_node_from_raw_label(label), parent_id).ok();
+        tree = parse_newick_recursive(
+            s[self.start_position..self.position].into(),
+            child_id,
+            tree,
+        );
+        self.position += label.len();
+        self.start_position = self.position;
+        tree
+    }
+
+    /// Advance iterator position, handling position synchronization.
+    fn advance_iterator_position(
+        &mut self,
+        char_iterator: &mut std::str::CharIndices,
+    ) -> Option<char> {
+        match char_iterator.next() {
+            Some((char_index, c)) => {
+                if self.position > char_index {
+                    self.advance_iterator_position(char_iterator) // Skip outdated position and try next
+                } else {
+                    self.position = char_index;
+                    Some(c)
+                }
+            }
+            None => {
+                self.position += 1;
+                None
+            }
+        }
+    }
 }
 
+/// Converts multiple [Tree] objects to NEWICK formatted strings.
+///
+/// Trees are separated by newlines. Returns empty string if input is empty.
 pub fn write_newick(trees: &[Tree]) -> String {
     trees
         .iter()
@@ -225,23 +357,24 @@ pub fn write_newick(trees: &[Tree]) -> String {
 fn newick_string(tree: &Tree) -> String {
     if let Some(first_node_id) = &tree.first_node_id() {
         let children = tree.children(first_node_id);
-        let mut newick = _newick_string(children, tree);
+        let mut newick = newick_string_recursive(children, tree);
 
         if !newick.is_empty() {
             newick = format!("({newick})");
         }
 
-        if let Some(name) = tree.name(first_node_id) {
-            let name = name.replace(" ", "_");
-            newick.push_str(&name);
-            // newick = format!("{newick}'{name}'");
+        if let Some(label) = tree.label(first_node_id) {
+            let processed_label = label.replace(" ", "_");
+            newick.push_str(&processed_label);
         }
 
-        let node_props = tree.node_props(*first_node_id);
-        if !node_props.is_empty() {
-            let props_str: Vec<String> =
-                node_props.iter().map(|(k, v)| format!("{k}={v}")).collect();
-            newick.push_str(&format!("[&{}]", props_str.join(",")));
+        let node_attributes = tree.node_attributes(*first_node_id);
+        if !node_attributes.is_empty() {
+            let formatted_attributes: Vec<String> = node_attributes
+                .iter()
+                .map(|(key, value)| format!("{key}={value}"))
+                .collect();
+            newick.push_str(&format!("[&{}]", formatted_attributes.join(",")));
         }
 
         newick.push(';');
@@ -251,7 +384,7 @@ fn newick_string(tree: &Tree) -> String {
     }
 }
 
-fn _newick_string(child_nodes: Vec<&Node>, tree: &Tree) -> String {
+fn newick_string_recursive(child_nodes: Vec<&Node>, tree: &Tree) -> String {
     let mut newick: String = String::new();
     for child in child_nodes {
         if let Some(child_id) = child.node_id() {
@@ -259,40 +392,46 @@ fn _newick_string(child_nodes: Vec<&Node>, tree: &Tree) -> String {
             if !children.is_empty() {
                 newick.push_str(&format!(
                     "({})",
-                    &_newick_string(children, tree)
+                    &newick_string_recursive(children, tree)
                 ));
             }
         }
 
-        if let Some(name) = child.node_label() {
-            let name = name.replace(" ", "_");
-            newick.push_str(&name);
-            // newick = format!("{newick}'{name}'");
+        if let Some(label) = child.node_label() {
+            let processed_label = label.replace(" ", "_");
+            newick.push_str(&processed_label);
         }
 
         if let Some(child_id) = child.node_id() {
-            let node_props = tree.node_props(*child_id);
-            if !node_props.is_empty() {
-                let props_str: Vec<String> = node_props
+            let node_attributes = tree.node_attributes(*child_id);
+            if !node_attributes.is_empty() {
+                let formatted_node_attributes: Vec<String> = node_attributes
                     .iter()
-                    .map(|(k, v)| format!("{k}={v}"))
+                    .map(|(key, value)| format!("{key}={value}"))
                     .collect();
-                newick.push_str(&format!("[&{}]", props_str.join(",")));
+                newick.push_str(&format!(
+                    "[&{}]",
+                    formatted_node_attributes.join(",")
+                ));
             }
         }
 
-        if let Some(brlen) = child.branch_length() {
-            newick.push_str(&format!(":{brlen}"));
+        if let Some(branch_length) = child.branch_length() {
+            newick.push_str(&format!(":{branch_length}"));
         }
 
         if let Some(child_id) = child.node_id() {
-            let branch_props = tree.branch_props(*child_id);
-            if !branch_props.is_empty() {
-                let props_str: Vec<String> = branch_props
-                    .iter()
-                    .map(|(k, v)| format!("{k}={v}"))
-                    .collect();
-                newick.push_str(&format!("[&{}]", props_str.join(",")));
+            let branch_attributes = tree.branch_attributes(*child_id);
+            if !branch_attributes.is_empty() {
+                let formatted_branch_attributes: Vec<String> =
+                    branch_attributes
+                        .iter()
+                        .map(|(key, value)| format!("{key}={value}"))
+                        .collect();
+                newick.push_str(&format!(
+                    "[&{}]",
+                    formatted_branch_attributes.join(",")
+                ));
             }
         }
 
@@ -304,8 +443,8 @@ fn _newick_string(child_nodes: Vec<&Node>, tree: &Tree) -> String {
 /// Parses NEWICK formatted strings into [Tree] objects.
 pub fn parse_newick(s: String) -> Option<Vec<Tree>> {
     let mut trees: Vec<Tree> = Vec::new();
-    let s_filtered = filter_hash_comments(&s);
-    let tree_strings = split_multi_newick_str(&s_filtered);
+    let s_filtered = filter_hash_style_comments(&s);
+    let tree_strings = split_multi_newick_string(&s_filtered);
 
     for tree_string in tree_strings {
         let tree = parse_single_newick_tree(tree_string)?;
@@ -322,75 +461,62 @@ fn parse_single_newick_tree(s: String) -> Option<Tree> {
     }
 
     let (s_line_clean, rooting_preference) = process_rich_newick_prefix(&s);
-    let s_line_clean = clean_newick_str(&s_line_clean);
+    let s_line_clean = normalize_newick_string(&s_line_clean);
 
-    let mut tree = _parse_newick(s_line_clean, None, Tree::default());
+    let mut tree = parse_newick_recursive(s_line_clean, None, Tree::default());
 
     if tree.validate(true).is_err() {
         return None;
     }
 
-    // Applies "Rich NEWICK" rooting preference if specified.
+    // Apply Rich NEWICK rooting preference, if specified.
     apply_rooting_preference(&mut tree, rooting_preference);
 
     Some(tree)
 }
 
-fn _parse_newick(s: String, parent_id: Option<NodeId>, mut tree: Tree) -> Tree {
+fn parse_newick_recursive(
+    s: String,
+    parent_id: Option<NodeId>,
+    mut tree: Tree,
+) -> Tree {
     let mut state = ParserState::default();
-    let mut s_iter = s.char_indices();
+    let mut string_iterator = s.char_indices();
 
     while state.position < s.len() {
-        let character = match s_iter.next() {
-            Some((c_idx, c)) => {
-                if state.position > c_idx {
-                    continue;
-                } else {
-                    state.position = c_idx;
-                    c
-                }
-            }
-            None => {
-                state.position += 1;
-                continue;
-            }
+        let Some(character) =
+            state.advance_iterator_position(&mut string_iterator)
+        else {
+            continue;
         };
 
         match character {
-            '\'' => {
-                let is_escaped_single_quote =
-                    state.quote_state.handle_single_quote(&s, state.position);
+            '\'' | '"' => {
+                let (_, skip_next) = state
+                    .char_state
+                    .process_quote_character(character, &s, state.position);
 
-                if is_escaped_single_quote {
+                if skip_next {
                     // Advance the iterator past the escaped quote.
-                    _ = s_iter.next();
+                    _ = string_iterator.next();
                 }
             }
-            '"' => {
-                _ = state.quote_state.update_quote_state('"');
+            '[' | ']' => {
+                _ = state.char_state.process_bracket_if_unquoted(character);
             }
-            '(' if !state.is_in_quotes() => {
-                state.handle_open_paren(state.position);
+            '(' if state.char_state.can_process_parentheses() => {
+                state.process_open_paren(state.position);
             }
-            ')' if !state.is_in_quotes() => {
-                if state.handle_close_paren() {
-                    let label_end =
-                        parser_find_label_end(&s[state.position + 1..]);
-                    let label =
-                        &s[state.position + 1..state.position + 1 + label_end];
-                    let child_id = tree.add_node(node(label), parent_id).ok();
-                    tree = _parse_newick(
-                        s[state.start_position..state.position].into(),
-                        child_id,
-                        tree,
+            ')' if state.char_state.can_process_parentheses() => {
+                if state.process_close_paren() {
+                    tree = state.process_closing_paren_label_and_subtree(
+                        &s, parent_id, tree,
                     );
-                    state.position += label.len();
-                    state.start_position = state.position;
                 }
             }
-            ',' if !state.is_in_quotes() => {
-                parser_handle_comma_cases(
-                    &s, &mut state, parent_id, &mut tree, &mut s_iter,
+            ',' if state.char_state.can_process_comma() => {
+                state.handle_comma_cases(
+                    &s, parent_id, &mut tree, &mut string_iterator,
                 );
             }
             _ => (),
@@ -398,132 +524,152 @@ fn _parse_newick(s: String, parent_id: Option<NodeId>, mut tree: Tree) -> Tree {
     }
 
     if !state.was_open {
-        let _ = tree.add_nodes(nodes_from_string(s.as_str()), parent_id);
+        let _ = tree.add_nodes(
+            create_nodes_from_comma_separated_raw_labels(s.as_str()),
+            parent_id,
+        );
     }
     tree
 }
 
-/// Find the end position of a label in NEWICK format, respecting quotes and brackets.
-fn parser_find_label_end(s: &str) -> usize {
-    let mut joint_qn_state = JointQuoteAndNestingState::new();
-    let chars: Vec<char> = s.chars().collect();
+/// Find the end position of a node label in NEWICK format, respecting quotes and brackets.
+fn find_node_label_end(input_string: &str) -> usize {
+    let mut char_state = CharacterParseState::new();
+    let chars: Vec<char> = input_string.chars().collect();
 
-    let mut i = 0;
-    while i < chars.len() {
-        let c = chars[i];
+    let mut char_index = 0;
+    while char_index < chars.len() {
+        let character = chars[char_index];
 
-        match joint_qn_state.classify_character(c) {
-            CharacterType::Quote => {
-                let is_escaped_single_quote =
-                    joint_qn_state.quote_state.handle_single_quote(s, i);
-                if is_escaped_single_quote {
-                    i += 1;
-                }
+        // Handle quotes
+        let (quote_updated, skip_next) = char_state
+            .process_quote_character(character, input_string, char_index);
+        if quote_updated {
+            if skip_next {
+                char_index += 1;
             }
-            CharacterType::Delimiter => {
-                return s
+        }
+        // Handle nesting (brackets)
+        else if char_state.update_nesting(character) {
+            // Continue processing; nesting updated.
+        }
+        // Handle delimiters
+        else if char_state.is_unquoted_structural_delimiter(character) {
+            // For label parsing, we need to be at true top level (no brackets or parens)
+            if character == ',' && !char_state.at_top_level() {
+                // Continue processing; comma is inside nested structure.
+            } else {
+                return input_string
                     .char_indices()
-                    .nth(i)
-                    .map(|(idx, _)| idx)
-                    .unwrap_or(s.len());
-            }
-            CharacterType::Bracket | CharacterType::Other => {
-                // Continue...
+                    .nth(char_index)
+                    .map(|(index, _)| index)
+                    .unwrap_or(input_string.len());
             }
         }
 
-        i += 1;
+        char_index += 1;
     }
 
-    s.len()
+    input_string.len()
 }
 
-fn parser_handle_comma_cases(
-    s: &str,
-    state: &mut ParserState,
-    parent_id: Option<NodeId>,
-    tree: &mut Tree,
-    s_iter: &mut std::str::CharIndices,
-) {
-    // Handle nodes not surrounded by parentheses that occur next to nodes that are.
-    if !state.is_open && state.was_open {
-        parser_handle_nodes_without_parentheses(
-            s, &mut state.position, parent_id, tree,
-        );
-    }
-    // Handle simple comma-separated lists before parentheses.
-    else if !state.is_open
-        && !state.was_open
-        && s_iter.as_str().starts_with('(')
-    {
-        let _ =
-            tree.add_nodes(nodes_from_string(&s[0..state.position]), parent_id);
-    }
+/// Creates nodes from raw NEWICK node label strings.
+///
+/// Each string can contain a node label, branch length, and annotations.
+/// For example: "node_label:0.5[&annotation=value]"
+fn create_nodes_from_raw_labels<'a>(
+    raw_labels: impl Into<Vec<&'a str>>,
+) -> Vec<Node> {
+    raw_labels
+        .into()
+        .iter()
+        .map(|&raw_label| create_node_from_raw_label(raw_label))
+        .collect()
+}
+
+/// Creates nodes from comma-separated raw NEWICK node label strings.
+///
+/// Splits the input string at commas while respecting brackets and quotes,
+/// then creates nodes from each substring.
+fn create_nodes_from_comma_separated_raw_labels<'a>(
+    s: impl Into<&'a str>,
+) -> Vec<Node> {
+    let s: &str = s.into();
+    let raw_labels = split_respecting_brackets(s, ',');
+    create_nodes_from_raw_labels(raw_labels)
 }
 
 /// Handles nodes that appear without parentheses in mixed structures.
-fn parser_handle_nodes_without_parentheses(
+///
+/// This standalone function extracts the parsing logic from ParserState,
+/// making it easier to test and understand the parsing flow.
+fn handle_nodes_without_parentheses(
     s: &str,
-    i: &mut usize,
+    position: &mut usize,
     parent_id: Option<NodeId>,
     tree: &mut Tree,
 ) {
-    let no_parens = match s[*i + 1..].find(['(']) {
-        Some(x) => {
-            let mut rv = &s[*i + 1..*i + 1 + x];
+    let nodes_without_parens = match s[*position + 1..].find(['(']) {
+        Some(paren_pos) => {
+            let mut node_text = &s[*position + 1..*position + 1 + paren_pos];
             // Make sure additional (empty) node is not created when the ",("
             // pattern is encountered; e.g. "...node1,node2,(..."
-            if rv.ends_with(",") {
-                let after_rv = &s[*i + 1 + x..];
-                let mut after_rv_iter = after_rv.char_indices();
-                if let Some((_, c)) = after_rv_iter.next()
+            if node_text.ends_with(",") {
+                let text_after_nodes = &s[*position + 1 + paren_pos..];
+                let mut chars_after_nodes = text_after_nodes.char_indices();
+                if let Some((_, c)) = chars_after_nodes.next()
                     && c == '('
                 {
-                    rv = &rv[0..rv.len() - 1];
+                    node_text = &node_text[0..node_text.len() - 1];
                 }
             }
-            *i += x;
-            rv
+            *position += paren_pos;
+            node_text
         }
         None => {
-            let rv = &s[*i + 1..];
-            *i = s.len();
-            rv
+            let node_text = &s[*position + 1..];
+            *position = s.len();
+            node_text
         }
     };
 
-    if !no_parens.is_empty()
-        || (*i == s.len() && s.ends_with(',') && no_parens.is_empty())
+    if !nodes_without_parens.is_empty()
+        || (*position == s.len()
+            && s.ends_with(',')
+            && nodes_without_parens.is_empty())
     {
-        let _ = tree.add_nodes(nodes_from_string(no_parens), parent_id);
+        let _ = tree.add_nodes(
+            create_nodes_from_comma_separated_raw_labels(nodes_without_parens),
+            parent_id,
+        );
     }
 }
 
-fn nodes<'a>(names: impl Into<Vec<&'a str>>) -> Vec<Node> {
-    names.into().iter().map(|&n| node(n)).collect()
-}
-
-fn nodes_from_string<'a>(s: impl Into<&'a str>) -> Vec<Node> {
-    let s: &str = s.into();
-    let nds = split_respecting_brackets(s, ',');
-    nodes(nds)
-}
-
-fn node<'a>(newick_label: impl Into<&'a str>) -> Node {
+/// Creates a node from raw NEWICK node label string.
+///
+/// Parses the full raw NEWICK node label string which may include:
+/// - Node label (with optional quotes)
+/// - Branch length after ':'
+/// - Node and/or branch attributes in brackets
+///
+/// Example inputs: "species_A", "species_A:0.5", "species_A:0.5[&support=95]"
+fn create_node_from_raw_label<'a>(newick_label: impl Into<&'a str>) -> Node {
     let mut node = Node::default();
 
-    let (node_lab, branch_length, branch_attrs) =
+    let (node_label, branch_length, branch_attributes) =
         parse_newick_label(newick_label);
 
-    if let Some(node_lab) = node_lab {
-        if let Some((label, attrs)) = split_label_and_attributes(&node_lab) {
+    if let Some(node_label) = node_label {
+        if let Some((label, attributes)) =
+            split_label_and_attributes(&node_label)
+        {
             let trimmed_label = remove_quotes(label.trim());
             if !trimmed_label.is_empty() {
                 node.set_node_label(Some(&*trimmed_label));
             }
-            node.set_node_props(attrs);
+            node.set_node_attributes(attributes);
         } else {
-            let trimmed_label = remove_quotes(node_lab.trim());
+            let trimmed_label = remove_quotes(node_label.trim());
             if !trimmed_label.is_empty() {
                 node.set_node_label(Some(&*trimmed_label));
             }
@@ -534,14 +680,19 @@ fn node<'a>(newick_label: impl Into<&'a str>) -> Node {
         node.set_branch_length(Some(branch_length));
     };
 
-    if let Some(branch_attrs) = branch_attrs {
-        node.set_branch_props(branch_attrs);
+    if let Some(branch_attributes) = branch_attributes {
+        node.set_branch_attributes(branch_attributes);
     };
 
     node
 }
 
-/// Apply rooting preference from "Rich NEWICK" format.
+/// Applies rooting preference from Rich NEWICK format.
+///
+/// Rich NEWICK format allows explicit control over tree rooting:
+/// - `Some(false)`: Force unrooted (from [&U] prefix)
+/// - `Some(true)`: Force rooted (from [&R] prefix)
+/// - `None`: Use default rooting behavior
 fn apply_rooting_preference(tree: &mut Tree, rooting_preference: Option<bool>) {
     match rooting_preference {
         Some(false) => {
@@ -563,54 +714,24 @@ fn apply_rooting_preference(tree: &mut Tree, rooting_preference: Option<bool>) {
     }
 }
 
-/// Splits string respecting brackets, parentheses, and quotes.
-fn split_respecting_brackets(s: &str, delimiter: char) -> Vec<&str> {
-    let mut result = Vec::new();
-    let mut bracket_depth = 0;
-    let mut paren_depth = 0;
-    let mut brace_depth = 0;
-    let mut quote_depth = 0;
-    let mut start = 0;
-
-    for (i, c) in s.char_indices() {
-        match c {
-            '[' if quote_depth == 0 => bracket_depth += 1,
-            ']' if quote_depth == 0 => bracket_depth -= 1,
-            '(' if quote_depth == 0 => paren_depth += 1,
-            ')' if quote_depth == 0 => paren_depth -= 1,
-            '{' if quote_depth == 0 => brace_depth += 1,
-            '}' if quote_depth == 0 => brace_depth -= 1,
-            '"' | '\'' => quote_depth = (quote_depth + 1) % 2,
-            c if c == delimiter
-                && bracket_depth == 0
-                && paren_depth == 0
-                && brace_depth == 0
-                && quote_depth == 0 =>
-            {
-                result.push(&s[start..i]);
-                start = i + 1;
-            }
-            _ => {}
-        }
-    }
-
-    result.push(&s[start..]);
-    result
-}
-
-fn split_multi_newick_str(s: &str) -> Vec<String> {
-    let mut rv: Vec<String> = Vec::new();
+/// Splits input containing multiple NEWICK trees separated by semicolons.
+///
+/// Handles quoted content properly - semicolons inside quotes are ignored.
+/// Each tree is expected to end with a semicolon, but the function handles
+/// cases where the final semicolon is missing.
+fn split_multi_newick_string(s: &str) -> Vec<String> {
+    let mut newick_trees: Vec<String> = Vec::new();
     let mut current_tree = String::new();
     let mut in_quotes = false;
     let mut quote_char = '\0';
 
-    for ch in s.chars() {
-        current_tree.push(ch);
+    for character in s.chars() {
+        current_tree.push(character);
 
-        match ch {
+        match character {
             '\'' | '"' if !in_quotes => {
                 in_quotes = true;
-                quote_char = ch;
+                quote_char = character;
             }
             c if in_quotes && c == quote_char => {
                 in_quotes = false;
@@ -619,7 +740,7 @@ fn split_multi_newick_str(s: &str) -> Vec<String> {
             ';' if !in_quotes => {
                 let tree_str = current_tree.trim().to_string();
                 if !tree_str.is_empty() {
-                    rv.push(tree_str);
+                    newick_trees.push(tree_str);
                 }
                 current_tree.clear();
             }
@@ -630,42 +751,50 @@ fn split_multi_newick_str(s: &str) -> Vec<String> {
     // Handle case where input does not end with a semicolon.
     let tree_str = current_tree.trim().to_string();
     if !tree_str.is_empty() {
-        rv.push(tree_str);
+        newick_trees.push(tree_str);
     }
 
     // If no trees were found but input is not empty, treat whole input as one tree.
-    if rv.is_empty() && !s.trim().is_empty() {
-        rv.push(s.to_string());
+    if newick_trees.is_empty() && !s.trim().is_empty() {
+        newick_trees.push(s.to_string());
     }
 
-    rv
+    newick_trees
 }
 
-fn clean_newick_str(s: &str) -> String {
+/// Normalizes NEWICK string by removing whitespace while preserving quoted content.
+///
+/// This function:
+/// - Removes whitespace outside quotes and branch lengths
+/// - Preserves all content within quotes (including whitespace)
+/// - Handles escaped quotes properly
+/// - Preserves square bracket content (annotations)
+/// - Removes trailing semicolons
+fn normalize_newick_string(s: &str) -> String {
     let mut result = String::with_capacity(s.len());
     let mut chars = s.chars().peekable();
     let mut in_quotes = false;
     let mut quote_char = '\0';
     let mut in_branch_length = false;
 
-    while let Some(ch) = chars.next() {
-        match ch {
+    while let Some(character) = chars.next() {
+        match character {
             // Handle quotes.
             '\'' | '"' if !in_quotes => {
                 in_quotes = true;
-                quote_char = ch;
-                result.push(ch);
+                quote_char = character;
+                result.push(character);
             }
             c if in_quotes && c == quote_char => {
                 // Check for escaped quotes (double quotes).
                 if chars.peek() == Some(&quote_char) {
-                    result.push(ch);
+                    result.push(character);
                     if let Some(escaped_quote) = chars.next() {
-                        result.push(escaped_quote); // consume the second quote.
+                        result.push(escaped_quote); // Consume the second quote.
                     }
                 } else {
                     in_quotes = false;
-                    result.push(ch);
+                    result.push(character);
                 }
             }
             // Inside quotes, preserve everything including whitespace.
@@ -675,12 +804,12 @@ fn clean_newick_str(s: &str) -> String {
             // Handle branch length start.
             ':' => {
                 in_branch_length = true;
-                result.push(ch);
+                result.push(character);
             }
             // Handle branch length end.
             ',' | ')' | ';' | '[' if in_branch_length => {
                 in_branch_length = false;
-                result.push(ch);
+                result.push(character);
             }
             // Inside branch length, preserve non-whitespace.
             c if in_branch_length => {
@@ -688,14 +817,14 @@ fn clean_newick_str(s: &str) -> String {
                     result.push(c);
                 }
             }
-            // Handle comments (square brackets) - but only if not inside quotes.
+            // Handle bracket annotations - but only if not inside quotes.
             '[' if !in_quotes => {
-                result.push(ch);
-                // Skip to end of comment, preserving the content.
+                result.push(character);
+                // Process bracket content while preserving nested brackets.
                 let mut bracket_depth = 1;
-                for comment_ch in chars.by_ref() {
-                    result.push(comment_ch);
-                    match comment_ch {
+                for comment_character in chars.by_ref() {
+                    result.push(comment_character);
+                    match comment_character {
                         '[' => bracket_depth += 1,
                         ']' => {
                             bracket_depth -= 1;
@@ -718,11 +847,16 @@ fn clean_newick_str(s: &str) -> String {
     result.trim_end_matches(';').to_string()
 }
 
-/// Processes "Rich NEWICK" format prefix (e.g., [&U] or [&R])
+/// Processes Rich NEWICK format prefix (e.g., [&U] or [&R]).
+///
+/// Rich NEWICK format allows trees to be prefixed with rooting directives:
+/// - `[&U]`: Force tree to be treated as unrooted
+/// - `[&R]`: Force tree to be treated as rooted
+///
 /// Returns the cleaned string and rooting preference:
-/// - None:        default
-/// - Some(true):  force rooted
-/// - Some(false): force unrooted)
+/// - None:        default behavior (no prefix found)
+/// - Some(true):  force rooted ([&R])
+/// - Some(false): force unrooted ([&U])
 fn process_rich_newick_prefix(s: &str) -> (String, Option<bool>) {
     let s = s.trim();
     if let Some(rest) = s.strip_prefix("[&U]") {
@@ -734,12 +868,12 @@ fn process_rich_newick_prefix(s: &str) -> (String, Option<bool>) {
     }
 }
 
-/// Parses a NEWICK label into components (name, branch length, attributes).
+/// Parses a NEWICK label into components (node label, branch length, attributes).
 ///
 /// Returns a tuple of (node_label, branch_length, branch_attributes):
-/// - `node_label`: The cleaned node name (None if empty)
+/// - `node_label`: The cleaned node label (None if empty)
 /// - `branch_length`: Parsed numeric branch length (None if not present)
-/// - `branch_attributes`: Raw attribute string (None if not present)
+/// - `branch_attributes`: Parsed attribute map (None if not present)
 pub(crate) fn parse_newick_label<'a>(
     label: impl Into<&'a str>,
 ) -> (Option<String>, Option<TreeFloat>, Option<HashMap<String, Attribute>>) {
@@ -753,27 +887,28 @@ pub(crate) fn parse_newick_label<'a>(
     // Find the position to split on ':', respecting bracket boundaries
     let split_pos = find_colon_split_position(label);
 
-    let (node_part, branch_part) = if let Some(pos) = split_pos {
-        (label[..pos].trim(), Some(label[pos + 1..].trim()))
+    let (node_part, branch_part) = if let Some(position) = split_pos {
+        (label[..position].trim(), Some(label[position + 1..].trim()))
     } else {
         (label, None)
     };
 
     // Parse node label (everything before ':')
-    let node_lab =
+    let node_label =
         if node_part.is_empty() { None } else { Some(node_part.to_string()) };
 
-    let (branch_length, branch_attrs) = if let Some(branch_part) = branch_part {
-        parse_branch_part(branch_part)
-    } else {
-        (None, None)
-    };
+    let (branch_length, branch_attributes) =
+        if let Some(branch_part) = branch_part {
+            parse_branch_part_of_raw_label(branch_part)
+        } else {
+            (None, None)
+        };
 
-    (node_lab, branch_length, branch_attrs)
+    (node_label, branch_length, branch_attributes)
 }
 
-/// Parses branch part (length and attributes).
-fn parse_branch_part(
+/// Parses branch part of the raw NEWICK label (length and attributes).
+fn parse_branch_part_of_raw_label(
     branch_part: &str,
 ) -> (Option<TreeFloat>, Option<HashMap<String, Attribute>>) {
     // Check if branch part contains attributes [...]
@@ -802,17 +937,17 @@ fn parse_attributes_first_format(
     branch_part: &str,
     bracket_end: usize,
 ) -> (Option<TreeFloat>, Option<HashMap<String, Attribute>>) {
-    let attrs_str = &branch_part[..=bracket_end];
-    let brlen_str = &branch_part[bracket_end + 1..];
+    let attributes_substring = &branch_part[..=bracket_end];
+    let branch_length_substring = &branch_part[bracket_end + 1..];
 
-    let branch_length = if brlen_str.is_empty() {
+    let branch_length = if branch_length_substring.is_empty() {
         None
     } else {
-        brlen_str.parse::<TreeFloat>().ok()
+        branch_length_substring.parse::<TreeFloat>().ok()
     };
 
-    let branch_attrs = extract_bracket_content(attrs_str);
-    (branch_length, branch_attrs)
+    let branch_attributes = extract_annotation_content(attributes_substring);
+    (branch_length, branch_attributes)
 }
 
 /// Parses attributes with format: `:branch_length[&attributes]`.
@@ -820,94 +955,99 @@ fn parse_length_first_format(
     branch_part: &str,
     bracket_start: usize,
 ) -> (Option<TreeFloat>, Option<HashMap<String, Attribute>>) {
-    let brlen_str = &branch_part[..bracket_start];
-    let attrs_str = &branch_part[bracket_start..];
+    let branch_length_substring = &branch_part[..bracket_start];
+    let attributes_substring = &branch_part[bracket_start..];
 
-    // Check if brlen_str contains Rich NEWICK extended format
-    let (branch_length, rich_attrs) = if brlen_str.contains(':') {
-        parse_rich_newick_extended_fields(brlen_str)
-    } else {
-        // Standard branch length
-        let branch_length = if brlen_str.is_empty() {
-            None
+    // Check if branch_length_substring contains Rich NEWICK extended format
+    let (branch_length, rich_attributes) =
+        if branch_length_substring.contains(':') {
+            parse_rich_newick_extended_fields(branch_length_substring)
         } else {
-            brlen_str.parse::<TreeFloat>().ok()
+            // Standard branch length
+            let branch_length = if branch_length_substring.is_empty() {
+                None
+            } else {
+                branch_length_substring.parse::<TreeFloat>().ok()
+            };
+            (branch_length, HashMap::new())
         };
-        (branch_length, HashMap::new())
-    };
 
-    let bracket_attrs = extract_bracket_content(attrs_str);
+    let bracket_attributes = extract_annotation_content(attributes_substring);
 
-    // Combine "Rich NEWICK" attributes with bracket attributes
-    let combined_attrs = combine_attributes(rich_attrs, bracket_attrs);
-    (branch_length, combined_attrs)
+    // Combine Rich NEWICK attributes with bracket attributes
+    let combined_attributes =
+        combine_attributes(rich_attributes, bracket_attributes);
+    (branch_length, combined_attributes)
 }
 
-/// Extracts content from brackets `[...]`, handling multiple consecutive blocks: `[&a=1][&b=2][&c=3]`.
-fn extract_bracket_content(
-    attrs_str: &str,
+/// Extracts annotation content from brackets `[...]`, handling multiple consecutive blocks: `[&a=1][&b=2][&c=3]`.
+fn extract_annotation_content(
+    attributes_string: &str,
 ) -> Option<HashMap<String, Attribute>> {
-    if attrs_str.starts_with('[') {
-        let result = extract_multiple_attribute_blocks(attrs_str);
+    if attributes_string.starts_with('[') {
+        let result = extract_multiple_attribute_blocks(attributes_string);
         if result.is_empty() { None } else { Some(result) }
     } else {
         None
     }
 }
 
-/// Parses "Rich NEWICK" format: `:length:bootstrap:probability`.
+/// Parses Rich NEWICK format: `:length:bootstrap:probability`.
 fn parse_rich_newick_format(
     branch_part: &str,
 ) -> (Option<TreeFloat>, Option<HashMap<String, Attribute>>) {
     let parts: Vec<&str> = branch_part.split(':').collect();
     if parts.len() > 1 {
-        // "Rich NEWICK" extended format detected
-        let (branch_length, rich_attrs) =
+        // Rich NEWICK extended format detected
+        let (branch_length, rich_attributes) =
             parse_rich_newick_extended_fields(branch_part);
-        let branch_attrs = if rich_attrs.is_empty() {
+        let branch_attributes = if rich_attributes.is_empty() {
             None
         } else {
-            // Some(rich_attrs.join(","))
-            Some(rich_attrs)
+            Some(rich_attributes)
         };
-        (branch_length, branch_attrs)
+        (branch_length, branch_attributes)
     } else {
         // Standard format: just branch length
         (branch_part.parse::<TreeFloat>().ok(), None)
     }
 }
 
-/// Parses "Rich NEWICK" extended fields: `:length:bootstrap:probability`.
+/// Parses Rich NEWICK extended fields: `:length:bootstrap:probability`.
 fn parse_rich_newick_extended_fields(
-    brlen_str: &str,
+    branch_length_string: &str,
 ) -> (Option<TreeFloat>, HashMap<String, Attribute>) {
-    let parts: Vec<&str> = brlen_str.split(':').collect();
+    let parts: Vec<&str> = branch_length_string.split(':').collect();
     let branch_length = if parts[0].is_empty() {
         None
     } else {
         parts[0].parse::<TreeFloat>().ok()
     };
 
-    let mut rich_attrs: HashMap<String, Attribute> = HashMap::new();
+    let mut rich_attributes: HashMap<String, Attribute> = HashMap::new();
     if parts.len() > 1 && !parts[1].is_empty() {
-        if let Ok(attr) = parts[1].parse() {
-            _ = rich_attrs
-                .insert("bootstrap".to_string(), Attribute::Integer(attr));
+        if let Ok(attribute_value) = parts[1].parse() {
+            _ = rich_attributes.insert(
+                "bootstrap".to_string(),
+                Attribute::Integer(attribute_value),
+            );
         }
     }
     if parts.len() > 2 && !parts[2].is_empty() {
-        if let Ok(attr) = parts[2].parse() {
-            _ = rich_attrs
-                .insert("probability".to_string(), Attribute::Decimal(attr));
+        if let Ok(attribute_value) = parts[2].parse() {
+            _ = rich_attributes.insert(
+                "probability".to_string(),
+                Attribute::Decimal(attribute_value),
+            );
         }
     }
 
-    (branch_length, rich_attrs)
+    (branch_length, rich_attributes)
 }
 
 /// Finds the position to split on `:` while respecting bracket boundaries. This
-/// ensures that colons inside brackets (like NHX attributes) are not used for
-/// splitting. For "Rich NEWICK" extended format `:length:bootstrap:probability`,
+/// ensures that colons inside brackets (like IQ-TREE attributes) are not used for
+/// splitting. For Rich NEWICK extended format `:length:bootstrap:probability`,
 /// uses the first colon.
 fn find_colon_split_position(s: &str) -> Option<usize> {
     let mut bracket_depth = 0;
@@ -915,63 +1055,29 @@ fn find_colon_split_position(s: &str) -> Option<usize> {
     let mut first_colon_pos = None;
     let mut colon_count = 0;
 
-    for (i, c) in s.char_indices() {
-        match c {
+    for (char_index, character) in s.char_indices() {
+        match character {
             '[' if quote_depth == 0 => bracket_depth += 1,
             ']' if quote_depth == 0 => bracket_depth -= 1,
             '"' | '\'' => quote_depth = (quote_depth + 1) % 2,
             ':' if bracket_depth == 0 && quote_depth == 0 => {
                 colon_count += 1;
                 if first_colon_pos.is_none() {
-                    first_colon_pos = Some(i);
+                    first_colon_pos = Some(char_index);
                 }
             }
             _ => {}
         }
     }
 
-    // If there are multiple colons outside brackets, this might be "Rich NEWICK"
+    // If there are multiple colons outside brackets, this might be Rich NEWICK
     // extended format. In that case, use the first colon to separate name from
-    // branch specification.
+    // the branch part.
     if colon_count > 1 {
         first_colon_pos
     } else {
         // For single colon, use the logic: first colon is also last colon.
         first_colon_pos
-    }
-}
-
-/// Removes quotes from a label and handles escaping according to NEWICK
-/// "specification".
-///
-/// NEWICK "specification" rules:
-/// - Unquoted strings: underscores (`_`) become spaces.
-/// - Single quoted strings: `''` becomes `'` (escape sequence).
-/// - Double quoted strings: `""` becomes `"` (escape sequence).
-/// - Quoted strings preserve all other characters including underscores.
-pub(crate) fn remove_quotes(s: &str) -> String {
-    let s = s.trim();
-
-    if (s.starts_with('\'') && s.ends_with('\''))
-        || (s.starts_with('"') && s.ends_with('"'))
-    {
-        if s.len() >= 2 {
-            let inner = &s[1..s.len() - 1];
-
-            if s.starts_with('\'') {
-                return inner.replace("''", "'");
-            } else {
-                return inner.replace("\"\"", "\"");
-            }
-        }
-    }
-
-    // - Unquoted strings: convert underscores to spaces.
-    // - Quoted strings: preserve underscores.
-    if !s.starts_with('\'') && !s.starts_with('"') {
-        s.replace('_', " ")
-    } else {
-        s.to_string()
     }
 }
 
@@ -981,43 +1087,46 @@ pub(crate) fn remove_quotes(s: &str) -> String {
 /// ```ignore
 /// // Basic comment filtering
 /// let input = "# This is a comment\n(A,B,C);";
-/// let filtered = filter_hash_comments(input);
+/// let filtered = filter_hash_style_comments(input);
 /// // Result: "\n(A,B,C);"
 ///
 /// // Inline comment filtering
 /// let input = "(A,B,C); # This tree has 3 taxa";
-/// let filtered = filter_hash_comments(input);
+/// let filtered = filter_hash_style_comments(input);
 /// // Result: "(A,B,C); "
 ///
 /// // Preserve hash in quotes
 /// let input = "('Label#WithHash',B);";
-/// let filtered = filter_hash_comments(input);
+/// let filtered = filter_hash_style_comments(input);
 /// // Result: "('Label#WithHash',B);" (unchanged)
 /// ```
-fn filter_hash_comments(input: &str) -> String {
+fn filter_hash_style_comments(input: &str) -> String {
     let mut result = String::new();
-    let mut joint_qn_state = JointQuoteAndNestingState::new();
+    let mut char_state = CharacterParseState::new();
 
     for line in input.lines() {
         let mut filtered_line = String::new();
 
-        for ch in line.chars() {
-            match joint_qn_state.classify_character(ch) {
-                CharacterType::Other => {
-                    if ch == '#'
-                        && !joint_qn_state.in_quotes()
-                        && joint_qn_state.at_top_level()
-                    {
-                        break;
-                    } else {
-                        filtered_line.push(ch);
-                    }
+        for character in line.chars() {
+            // Update state tracking
+            let is_quote = char_state.update_quote_state(character);
+            let is_bracket = char_state.update_nesting(character);
+            let is_delimiter =
+                char_state.is_unquoted_structural_delimiter(character);
+
+            if !is_quote && !is_bracket && !is_delimiter {
+                // This is a regular character
+                if character == '#'
+                    && !char_state.in_quotes()
+                    && char_state.at_top_level()
+                {
+                    break;
+                } else {
+                    filtered_line.push(character);
                 }
-                CharacterType::Quote
-                | CharacterType::Bracket
-                | CharacterType::Delimiter => {
-                    filtered_line.push(ch);
-                }
+            } else {
+                // Quote, bracket, or delimiter - always keep
+                filtered_line.push(character);
             }
         }
 

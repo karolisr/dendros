@@ -2,6 +2,11 @@ use super::Attribute;
 use std::collections::HashMap;
 
 /// Checks if a string is in NHX format and extracts the content.
+///
+/// Recognizes three NHX format variants:
+/// - `&&NHX:` - Full NHX prefix with double ampersand
+/// - `&NHX:` - NHX prefix with single ampersand
+/// - `&NHX` - NHX prefix without colon (legacy)
 pub(super) fn extract_nhx_content(s: &str) -> Option<&str> {
     if s.starts_with("&&NHX:") {
         Some(s.strip_prefix("&&NHX:").unwrap_or_default())
@@ -12,6 +17,13 @@ pub(super) fn extract_nhx_content(s: &str) -> Option<&str> {
     } else {
         None
     }
+}
+
+/// Checks if a string is in NHX format.
+///
+/// Returns true if the string starts with any valid NHX prefix.
+pub(super) fn is_nhx_format(s: &str) -> bool {
+    s.starts_with("&&NHX:") || s.starts_with("&NHX:") || s.starts_with("&NHX")
 }
 
 /// Parses NHX (New Hampshire X) format attributes.

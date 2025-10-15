@@ -35,22 +35,22 @@ fn tree_info(tree_name: &str, tree: &Tree) {
     println!();
 
     tree.node_ids_all().iter().for_each(|&id| {
-        let mut node_props: Vec<(String, Attribute)> = tree
-            .node_props(id)
+        let mut node_attributes: Vec<(String, Attribute)> = tree
+            .node_attributes(id)
             .iter()
             .map(|(name, attr)| (name.clone(), attr.clone()))
             .collect();
 
-        let mut branch_props: Vec<(String, Attribute)> = tree
-            .branch_props(id)
+        let mut branch_attributes: Vec<(String, Attribute)> = tree
+            .branch_attributes(id)
             .iter()
             .map(|(name, attr)| (name.clone(), attr.clone()))
             .collect();
 
-        node_props.sort_by_key(|x| x.0.clone());
-        branch_props.sort_by_key(|x| x.0.clone());
+        node_attributes.sort_by_key(|x| x.0.clone());
+        branch_attributes.sort_by_key(|x| x.0.clone());
 
-        let node_label_opt = tree.name(&id);
+        let node_label_opt = tree.label(&id);
 
         // let node_opt = tree.node(Some(id));
         // if let Some(node) = node_opt {
@@ -67,15 +67,15 @@ fn tree_info(tree_name: &str, tree: &Tree) {
 
         println!("\t---------------------------------------------------------");
 
-        node_props.iter().for_each(|(name, attr)| {
+        node_attributes.iter().for_each(|(name, attr)| {
             println!("\t  Node: {name:<30} {attr:?}");
         });
 
-        branch_props.iter().for_each(|(name, attr)| {
+        branch_attributes.iter().for_each(|(name, attr)| {
             println!("\tBranch: {name:<30} {attr:?}");
         });
 
-        if !node_props.is_empty() || !branch_props.is_empty() {
+        if !node_attributes.is_empty() || !branch_attributes.is_empty() {
             println!(
                 "\t---------------------------------------------------------"
             );

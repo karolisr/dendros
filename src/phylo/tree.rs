@@ -32,645 +32,12 @@ pub enum TreeError {
 }
 
 impl Tree {
-    pub fn node_ids_all(&self) -> Vec<NodeId> {
-        self.nodes.keys().collect()
-    }
-
-    pub fn has_tip_labels(&self) -> bool {
-        for n in self.nodes.values() {
-            if n.is_tip() && n.node_label().is_some() {
-                return true;
-            }
-        }
-        false
-    }
-
-    pub fn has_int_labels(&self) -> bool {
-        for n in self.nodes.values() {
-            if !n.is_tip() && n.node_label().is_some() {
-                return true;
-            }
-        }
-        false
-    }
-
-    pub fn tip_heights(&self) -> Vec<(NodeId, TreeFloat)> {
-        if let Some(first_node_id) = self.first_node_id {
-            let tip_nodes = self.tip_node_ids_all();
-            let mut heights = Vec::with_capacity(tip_nodes.len());
-
-            // Use parallel processing for larger trees
-            if tip_nodes.len() > 100 {
-                heights = tip_nodes
-                    .par_iter()
-                    .map(|&node_id| {
-                        (node_id, self.dist(&first_node_id, &node_id))
-                    })
-                    .collect();
-            } else {
-                for &node_id in &tip_nodes {
-                    heights
-                        .push((node_id, self.dist(&first_node_id, &node_id)));
-                }
-            }
-
-            heights
-        } else {
-            Vec::new()
-        }
-    }
-
-    pub fn is_ultrametric(&self, epsilon: TreeFloat) -> Option<bool> {
-        if !self.is_rooted() {
-            return None;
-        }
-
-        let tip_heights = self.tip_heights();
-        if tip_heights.is_empty() {
-            return Some(true);
-        }
-
-        let first_height = tip_heights[0].1;
-        for (_, height) in tip_heights.iter().skip(1) {
-            if (first_height - height).abs() >= epsilon {
-                return Some(false);
-            }
-        }
-
-        Some(true)
-    }
-
-    pub fn can_root(&self, node_id: &NodeId) -> bool {
-        if let Some(first_node_id) = &self.first_node_id {
-            if node_id == first_node_id {
-                return false;
-            }
-            if self.is_rooted() {
-                let bad_outgroups = self.child_ids(first_node_id);
-                if bad_outgroups.contains(node_id) {
-                    return false;
-                }
-            }
-        }
-        true
-    }
-
-    pub fn root(&mut self, node_id: NodeId) -> Result<NodeId, TreeError> {
-        if !self.can_root(&node_id) {
-            return Err(TreeError::InvalidOutgroupNode(node_id));
-        }
-        let yanked_node = self.unroot();
-        if let Some(left_id) = self.first_node_id {
-            let new_root_id = self
-                .add_new_node(<Option<&str>>::None, None, None)
-                .ok()
-                .unwrap();
-
-            let path = self.path(&node_id, &left_id);
-            let brl_new_out: TreeFloat =
-                self.branch_length(node_id).unwrap_or_default() / 2e0;
-            let br_props_new_out = self.branch_props(node_id);
-            // println!("{node_id}:{brl_new_out} <- new out");
-            if self.has_branch_lengths {
-                self.nodes[node_id].set_branch_length(Some(brl_new_out));
-            }
-            self.nodes[node_id].set_parent_id(Some(new_root_id));
-
-            // println!("---");
-            // println!("{new_root_id} <- new root");
-            self.nodes[new_root_id].add_child_id(node_id);
-            // println!("---");
-
-            let mut prev_brl = brl_new_out;
-            let mut prev_br_props = br_props_new_out;
-            let mut prev_par = new_root_id;
-            for &id in &path {
-                // println!("{id}:{prev_brl} {prev_par} <- to reverse");
-                let brl_tmp = self.branch_length(id).unwrap_or_default();
-                let br_props_tmp = self.branch_props(id);
-                if self.has_branch_lengths {
-                    self.nodes[id].set_branch_length(Some(prev_brl));
-                }
-                self.nodes[id].set_branch_props(prev_br_props);
-                self.nodes[prev_par].add_child_id(id);
-                self.nodes[id].set_parent_id(Some(prev_par));
-                self.nodes[id].remove_child_id(&prev_par);
-                self.nodes[id].remove_child_id(&node_id);
-                prev_br_props = br_props_tmp;
-                prev_brl = brl_tmp;
-                prev_par = id;
-            }
-
-            let mut new_node_name: Option<String> = self.nodes[left_id]
-                .node_label()
-                .map(|node_label| node_label.to_string());
-
-            if let Some(yanked_node) = yanked_node
-                && let Some(name) = yanked_node.node_label()
-            {
-                new_node_name = Some(name.to_string());
-            }
-
-            // println!("NEW LAST:{prev_brl} {prev_par} <- new last");
-            let new_last = self
-                .add_new_node(new_node_name.as_deref(), None, Some(prev_par))
-                .ok()
-                .unwrap();
-
-            if self.has_branch_lengths {
-                self.nodes[new_last].set_branch_length(Some(prev_brl));
-            }
-
-            self.nodes[new_last].set_branch_props(prev_br_props);
-
-            let id_to_ignore: NodeId =
-                if !path.is_empty() { path[path.len() - 1] } else { node_id };
-
-            let tmp_chld_ids = self.child_ids(&left_id).to_vec();
-            for id in tmp_chld_ids {
-                if id != id_to_ignore {
-                    // let brl_last = self.branch_length(id).unwrap_or_default();
-                    // println!("{id}:{brl_last:<5.3} <- child of last");
-                    self.nodes[new_last].add_child_id(id);
-                    self.nodes[id].set_parent_id(Some(new_last));
-                }
-            }
-            _ = self.nodes.remove(left_id);
-        }
-        self.edges = None;
-        self.validate(true)
-    }
-
-    pub fn path(&self, right_id: &NodeId, left_id: &NodeId) -> Vec<NodeId> {
-        if left_id == right_id {
-            return Vec::new();
-        }
-
-        let mut path = Vec::new();
-        let mut current = right_id;
-
-        while let Some(parent_id) = self.parent_id(current) {
-            if parent_id == left_id {
-                break;
-            }
-            path.push(*parent_id);
-            current = parent_id;
-        }
-
-        path
-    }
-
-    pub fn node_id_by_name<'a>(
-        &self,
-        name: impl Into<&'a str>,
-    ) -> Option<NodeId> {
-        let name: &str = name.into();
-        self.nodes.iter().find_map(|(node_id, node)| {
-            if let Some(node_name) = node.node_label() {
-                if node_name == name.into() { Some(node_id) } else { None }
-            } else {
-                None
-            }
-        })
-    }
-
-    pub fn unroot(&mut self) -> Option<Node> {
-        let mut yanked_node: Option<Node> = None;
-        if let Some(node_to_drop_id) = self.pick_node_to_drop_before_unroot() {
-            self.slide_brlen_through_root(node_to_drop_id);
-            yanked_node = self.node(Some(node_to_drop_id)).cloned();
-            self.yank_node(node_to_drop_id);
-            self.edges = None;
-            let _ = self.validate(true);
-        }
-        yanked_node
-    }
-
-    fn yank_node(&mut self, node_id: NodeId) {
-        let child_ids = self.child_ids(&node_id).to_vec();
-        if let Some(parent_node_id) = self.nodes[node_id].parent_id() {
-            let parent_node_id: NodeId = *parent_node_id;
-            let parent = self.nodes.get_mut(parent_node_id).unwrap();
-
-            parent.remove_child_id(&node_id);
-
-            for &child_id in &child_ids {
-                parent.add_child_id(child_id);
-            }
-
-            for &child_id in &child_ids {
-                let child = self.nodes.get_mut(child_id).unwrap();
-                child.set_parent_id(Some(parent_node_id));
-            }
-
-            _ = self.nodes.remove(node_id);
-        }
-    }
-
-    fn slide_brlen_through_root(&mut self, source_node_id: NodeId) {
-        if !self.is_rooted() || !self.has_branch_lengths {
-            return;
-        }
-
-        let mut receive_node_id: NodeId = source_node_id;
-        for &other_id in self.child_ids(&self.first_node_id.unwrap()) {
-            if other_id != source_node_id {
-                receive_node_id = other_id;
-            }
-        }
-
-        assert_ne!(source_node_id, receive_node_id);
-
-        let source_node = &self.nodes[source_node_id];
-        let receive_node = &self.nodes[receive_node_id];
-
-        let mut new_brlen: TreeFloat = 0e0;
-        if let Some(source_brlen) = source_node.branch_length() {
-            if let Some(receive_brlen) = receive_node.branch_length() {
-                new_brlen = receive_brlen + source_brlen;
-            } else {
-                new_brlen = source_brlen;
-            }
-        }
-
-        self.nodes[source_node_id].set_branch_length(Some(0e0));
-        self.nodes[receive_node_id].set_branch_length(Some(new_brlen));
-    }
-
-    fn pick_node_to_drop_before_unroot(&self) -> Option<NodeId> {
-        if !self.is_rooted() {
-            return None;
-        }
-        if let Some(root_node) = self.node(self.first_node_id)
-            && root_node.child_node_count() != 2
-        {
-            return None;
-        }
-        let root_chld = self.children(&self.first_node_id.unwrap());
-        let c1 = root_chld[0];
-        let c2 = root_chld[1];
-
-        if c1.is_tip() && c2.is_tip() {
-            return None;
-        }
-
-        // At this point we know that at most one of c1 and c2 could still be a tip.
-        let node_to_drop;
-        if c1.is_tip() || c2.is_tip() {
-            if c1.is_tip() {
-                // c1 is a tip
-                node_to_drop = c2;
-            } else {
-                // c2 must be a tip a this point
-                node_to_drop = c1;
-            }
-        } else {
-            // The only possible state at this point is that neither c1 or c2 are tips.
-            // Arbitrarily drop the one with more total descending tips.
-            let tcr1 = self.tip_count_recursive(c1.node_id().unwrap());
-            let tcr2 = self.tip_count_recursive(c2.node_id().unwrap());
-
-            if tcr1 > tcr2 {
-                node_to_drop = c1;
-            } else {
-                node_to_drop = c2;
-            }
-        }
-
-        node_to_drop.node_id().copied()
-    }
-
-    pub fn has_branch_lengths(&self) -> bool {
-        self.has_branch_lengths
-    }
-
-    pub fn is_tip(&self, node_id: &NodeId) -> bool {
-        self.nodes[*node_id].is_tip()
-    }
-
-    pub fn tip_node_ids(&self, node_id: &NodeId) -> Vec<NodeId> {
-        let mut result = Vec::new();
-        self.collect_tip_ids_recursive(*node_id, &mut result);
-        result
-    }
-
-    fn collect_tip_ids_recursive(
-        &self,
-        node_id: NodeId,
-        result: &mut Vec<NodeId>,
-    ) {
-        if self.is_tip(&node_id) {
-            result.push(node_id);
-        } else {
-            for child_id in self.child_ids(&node_id) {
-                self.collect_tip_ids_recursive(*child_id, result);
-            }
-        }
-    }
-
-    pub fn tip_node_ids_all(&self) -> Vec<NodeId> {
-        if let Some(id) = self.first_node_id {
-            self.tip_node_ids(&id)
-        } else {
-            Vec::new()
-        }
-    }
-
-    pub fn height(&self) -> TreeFloat {
-        if let Some(id) = &self.first_node_id {
-            let tip_ids = self.tip_node_ids_all();
-
-            // Use parallel processing for larger trees
-            if tip_ids.len() > 100 {
-                tip_ids
-                    .par_iter()
-                    .map(|right| self.dist(id, right))
-                    .reduce(|| 0.0, f64::max)
-            } else {
-                tip_ids
-                    .iter()
-                    .map(|right| self.dist(id, right))
-                    .fold(0.0, f64::max)
-            }
-        } else {
-            0.0
-        }
-    }
-
-    pub fn dist(&self, left: &NodeId, right: &NodeId) -> TreeFloat {
-        if left == right {
-            return 0.0;
-        }
-
-        // For now, keep the original implementation as memoization would require &mut self
-        // TODO: Consider using RefCell for interior mutability if memoization is needed
-        let mut h: TreeFloat = 0.0;
-        h += self.branch_length(*right).unwrap_or(0.0);
-
-        if let Some(parent) = self.parent_id(right) {
-            if parent != left {
-                h += self.dist(left, parent);
-            }
-        }
-
-        h
-    }
-
-    pub fn child_count(&self, node_id: &NodeId) -> usize {
-        self.nodes[*node_id].child_node_count()
-    }
-
-    pub fn child_count_recursive(&self, node_id: &NodeId) -> usize {
-        let children = self.child_ids(node_id);
-        children.len()
-            + children
-                .iter()
-                .map(|child_id| self.child_count_recursive(child_id))
-                .sum::<usize>()
-    }
-
-    pub fn edges_are_stale(&self) -> bool {
-        self.edges.is_none()
-    }
-
-    pub fn edges(&self) -> Option<&Vec<Edge>> {
-        self.edges.as_ref()
-    }
-
-    pub fn sort(&mut self, reverse: bool) {
-        if let Some(node_id) = self.first_node_id {
-            self.sort_nodes(node_id, reverse);
-            self.edges = None;
-            self.make_fresh_edges();
-        }
-    }
-
-    pub fn make_fresh_edges(&mut self) {
-        if let Some(_) = self.first_node_id
-            && self.edges_are_stale()
-        {
-            let mut edges = flatten_tree(self);
-
-            for (edge_idx, edge) in edges.iter_mut().enumerate() {
-                edge.edge_idx = edge_idx;
-                self.nodes[edge.node_id].set_edge_idx(edge_idx);
-            }
-
-            self.edges = Some(edges);
-        }
-    }
-
-    pub fn edge_idx_for_node_id(&self, node_id: NodeId) -> Option<usize> {
-        self.node(Some(node_id))?.edge_idx()
-    }
-
-    pub fn sorted(tree: &Self, reverse: bool) -> Self {
-        let mut tmp = tree.clone();
-        tmp.sort(reverse);
-        tmp
-    }
-
-    fn sort_nodes(&mut self, node_id: NodeId, reverse: bool) {
-        let mut sorted_ids: Vec<NodeId> =
-            self.nodes[node_id].child_ids().to_vec();
-        sorted_ids.par_sort_by_key(|c| self.child_count_recursive(c));
-        if reverse {
-            sorted_ids.reverse();
-        }
-        for &id in &sorted_ids {
-            self.sort_nodes(id, reverse);
-        }
-        self.nodes[node_id].set_child_ids(sorted_ids);
-    }
-
-    pub fn tip_count_recursive(&self, node_id: &NodeId) -> usize {
-        let mut rv: usize = 0;
-        for child_id in self.child_ids(node_id) {
-            if !self.is_tip(child_id) {
-                rv += self.tip_count_recursive(child_id);
-            } else {
-                rv += 1;
-            }
-        }
-        rv
-    }
-
-    pub fn tip_count(&self, node_id: &NodeId) -> usize {
-        let mut rv: usize = 0;
-        for child_node in self.children(node_id) {
-            if child_node.is_tip() {
-                rv += 1;
-            }
-        }
-        rv
-    }
+    // =========================================================================
+    // Construction & Validation
+    // =========================================================================
 
     pub fn new() -> Self {
         Self::default()
-    }
-
-    pub fn branch_props(&self, node_id: NodeId) -> HashMap<String, Attribute> {
-        self.nodes[node_id].branch_props()
-    }
-
-    pub fn node_props(&self, node_id: NodeId) -> HashMap<String, Attribute> {
-        self.nodes[node_id].node_props()
-    }
-
-    pub fn branch_prop_keys(&self) -> Vec<String> {
-        let mut rv: FxHashSet<String> = FxHashSet::default();
-        for n in self.nodes.values() {
-            let prop_keys: FxHashSet<String> = FxHashSet::from_iter(
-                self.branch_props(*n.node_id().unwrap()).keys().cloned(),
-            );
-            rv.extend(prop_keys);
-        }
-        rv.into_iter().collect()
-    }
-
-    pub fn node_prop_keys(&self) -> Vec<String> {
-        let mut rv: FxHashSet<String> = FxHashSet::default();
-        for n in self.nodes.values() {
-            let prop_keys: FxHashSet<String> = FxHashSet::from_iter(
-                self.node_props(*n.node_id().unwrap()).keys().cloned(),
-            );
-            rv.extend(prop_keys);
-        }
-        rv.into_iter().collect()
-    }
-
-    pub fn branch_length(&self, node_id: NodeId) -> Option<TreeFloat> {
-        if self.has_branch_lengths {
-            self.nodes[node_id].branch_length()
-        } else if Some(node_id) == self.first_node_id() {
-            None
-        } else {
-            Some(1e0)
-        }
-    }
-
-    pub fn tip_count_all(&self) -> usize {
-        self.tip_count_all
-    }
-
-    pub fn internal_node_count_all(&self) -> usize {
-        self.internal_node_count_all
-    }
-
-    pub fn node_count_all(&self) -> usize {
-        self.node_count_all
-    }
-
-    pub fn name(&self, node_id: &NodeId) -> Option<Arc<str>> {
-        self.nodes[*node_id].node_label()
-    }
-
-    pub fn parent_id(&self, node_id: &NodeId) -> Option<&NodeId> {
-        self.nodes[*node_id].parent_id()
-    }
-
-    pub fn child_ids(&self, node_id: &NodeId) -> &[NodeId] {
-        self.nodes[*node_id].child_ids()
-    }
-
-    pub fn first_child_id(&self, node_id: &NodeId) -> Option<&NodeId> {
-        self.child_ids(node_id).first()
-    }
-
-    pub fn last_child_id(&self, node_id: &NodeId) -> Option<&NodeId> {
-        self.child_ids(node_id).last()
-    }
-
-    pub fn bounding_tip_ids_for_clade<'a>(
-        &'a self,
-        node_id: &'a NodeId,
-    ) -> (&'a NodeId, &'a NodeId) {
-        (
-            self.first_tip_id_for_clade(node_id),
-            self.last_tip_id_for_clade(node_id),
-        )
-    }
-
-    pub fn first_tip_id_for_clade<'a>(
-        &'a self,
-        node_id: &'a NodeId,
-    ) -> &'a NodeId {
-        match self.first_child_id(node_id) {
-            Some(child_id) => self.first_tip_id_for_clade(child_id),
-            None => node_id,
-        }
-    }
-
-    pub fn last_tip_id_for_clade<'a>(
-        &'a self,
-        node_id: &'a NodeId,
-    ) -> &'a NodeId {
-        match self.last_child_id(node_id) {
-            Some(child_id) => self.last_tip_id_for_clade(child_id),
-            None => node_id,
-        }
-    }
-
-    pub fn bounding_tip_edges_for_clade(
-        &self,
-        node_id: &NodeId,
-    ) -> Option<(&Edge, &Edge)> {
-        if !self.node_exists(Some(*node_id)) {
-            return None;
-        }
-
-        let edges = self.edges()?;
-        let (&tip_id_0, &tip_id_1) = self.bounding_tip_ids_for_clade(node_id);
-        let start: &Edge = &edges[self.edge_idx_for_node_id(tip_id_0)?];
-        let end: &Edge = &edges[self.edge_idx_for_node_id(tip_id_1)?];
-
-        Some((start, end))
-    }
-
-    pub fn bounding_edges_for_clade(
-        &self,
-        node_id: &NodeId,
-    ) -> Option<(Vec<Edge>, Vec<Edge>)> {
-        if !self.node_exists(Some(*node_id)) {
-            return None;
-        }
-
-        let edges = self.edges()?;
-
-        let (top_tip_id, bottom_tip_id) =
-            self.bounding_tip_ids_for_clade(node_id);
-
-        let mut edges_top: Vec<Edge> = Vec::new();
-        let mut edges_bottom: Vec<Edge> = Vec::new();
-
-        let path_top = self.path(top_tip_id, node_id);
-        let path_bottom = self.path(bottom_tip_id, node_id);
-
-        edges_top.push(edges[self.edge_idx_for_node_id(*top_tip_id)?].clone());
-
-        for id in path_top {
-            let edge = &edges[self.edge_idx_for_node_id(id)?];
-            edges_top.push(edge.clone());
-        }
-
-        for &id in path_bottom.iter().rev() {
-            let edge = &edges[self.edge_idx_for_node_id(id)?];
-            edges_bottom.push(edge.clone());
-        }
-
-        edges_bottom
-            .push(edges[self.edge_idx_for_node_id(*bottom_tip_id)?].clone());
-
-        Some((edges_top, edges_bottom))
-    }
-
-    pub fn children(&self, node_id: &NodeId) -> Vec<&Node> {
-        let mut rv = Vec::new();
-        for &child_id in self.child_ids(node_id) {
-            let child_node = &self.nodes[child_id];
-            rv.push(child_node);
-        }
-        rv
     }
 
     pub fn add_new_node<'a>(
@@ -691,8 +58,8 @@ impl Tree {
         parent_node_id: Option<NodeId>,
     ) -> Result<NodeId, TreeError> {
         let nodes: Vec<Node> = vec![node];
-        let rslt = self.add_nodes(nodes, parent_node_id);
-        match rslt {
+        let result = self.add_nodes(nodes, parent_node_id);
+        match result {
             Ok(node_ids) => Ok(node_ids[0]),
             Err(err) => Err(err),
         }
@@ -705,14 +72,16 @@ impl Tree {
     ) -> Result<Vec<NodeId>, TreeError> {
         let mut nodes: Vec<Node> = nodes.into().to_vec();
 
-        if let Some(pnid) = parent_node_id {
+        if let Some(parent_node_id_value) = parent_node_id {
             if self.node_exists(parent_node_id) {
                 for node in &mut nodes {
                     node.set_parent_id(parent_node_id);
                     self.edges = None;
                 }
             } else {
-                return Err(TreeError::ParentNodeDoesNotExist(pnid));
+                return Err(TreeError::ParentNodeDoesNotExist(
+                    parent_node_id_value,
+                ));
             }
         }
 
@@ -732,33 +101,6 @@ impl Tree {
         }
 
         Ok(node_ids)
-    }
-
-    pub fn node(&self, node_id: Option<NodeId>) -> Option<&Node> {
-        if let Some(node_id) = node_id { self.nodes.get(node_id) } else { None }
-    }
-
-    pub fn node_mut(&mut self, node_id: Option<NodeId>) -> Option<&mut Node> {
-        if let Some(node_id) = node_id {
-            self.nodes.get_mut(node_id)
-        } else {
-            None
-        }
-    }
-
-    pub fn node_exists(&self, node_id: Option<NodeId>) -> bool {
-        self.node(node_id).is_some()
-    }
-
-    pub fn first_node_id(&self) -> Option<NodeId> {
-        self.first_node_id
-    }
-
-    pub fn is_rooted(&self) -> bool {
-        if let Some(node) = self.node(self.first_node_id()) {
-            return node.node_type() == NodeType::Root;
-        }
-        false
     }
 
     pub fn validate(
@@ -837,15 +179,760 @@ impl Tree {
         }
 
         if make_fresh_edges {
-            self.make_fresh_edges();
+            self.rebuild_edges();
         }
 
         Ok(self.first_node_id.unwrap())
     }
 
+    // =========================================================================
+    // Tree Properties
+    // =========================================================================
+
+    pub fn has_tip_labels(&self) -> bool {
+        for n in self.nodes.values() {
+            if n.is_tip() && n.node_label().is_some() {
+                return true;
+            }
+        }
+        false
+    }
+
+    pub fn has_internal_node_labels(&self) -> bool {
+        for n in self.nodes.values() {
+            if !n.is_tip() && n.node_label().is_some() {
+                return true;
+            }
+        }
+        false
+    }
+
+    pub fn tip_heights(&self) -> Vec<(NodeId, TreeFloat)> {
+        if let Some(first_node_id) = self.first_node_id {
+            let tip_nodes = self.tip_node_ids_all();
+            let mut heights = Vec::with_capacity(tip_nodes.len());
+
+            // Use parallel processing for larger trees
+            if tip_nodes.len() > 100 {
+                heights = tip_nodes
+                    .par_iter()
+                    .map(|&node_id| {
+                        (node_id, self.distance(&first_node_id, &node_id))
+                    })
+                    .collect();
+            } else {
+                for &node_id in &tip_nodes {
+                    heights.push((
+                        node_id,
+                        self.distance(&first_node_id, &node_id),
+                    ));
+                }
+            }
+
+            heights
+        } else {
+            Vec::new()
+        }
+    }
+
+    pub fn is_ultrametric(&self, epsilon: TreeFloat) -> Option<bool> {
+        if !self.is_rooted() {
+            return None;
+        }
+
+        let tip_heights = self.tip_heights();
+        if tip_heights.is_empty() {
+            return Some(true);
+        }
+
+        let first_height = tip_heights[0].1;
+        for (_, height) in tip_heights.iter().skip(1) {
+            if (first_height - height).abs() >= epsilon {
+                return Some(false);
+            }
+        }
+
+        Some(true)
+    }
+
+    pub fn has_branch_lengths(&self) -> bool {
+        self.has_branch_lengths
+    }
+
+    pub fn height(&self) -> TreeFloat {
+        if let Some(id) = &self.first_node_id {
+            let tip_ids = self.tip_node_ids_all();
+
+            // Use parallel processing for larger trees
+            if tip_ids.len() > 100 {
+                tip_ids
+                    .par_iter()
+                    .map(|right| self.distance(id, right))
+                    .reduce(|| 0.0, f64::max)
+            } else {
+                tip_ids
+                    .iter()
+                    .map(|right| self.distance(id, right))
+                    .fold(0.0, f64::max)
+            }
+        } else {
+            0.0
+        }
+    }
+
+    pub fn distance(
+        &self,
+        left_node_id: &NodeId,
+        right_node_id: &NodeId,
+    ) -> TreeFloat {
+        if left_node_id == right_node_id {
+            return 0.0;
+        }
+
+        // For now, keep the original implementation as memoization would require &mut self
+        // TODO: Consider using RefCell for interior mutability if memoization is needed
+        let mut total_distance: TreeFloat = 0.0;
+        total_distance += self.branch_length(*right_node_id).unwrap_or(0.0);
+
+        if let Some(parent_node_id) = self.parent_id(right_node_id) {
+            if parent_node_id != left_node_id {
+                total_distance += self.distance(left_node_id, parent_node_id);
+            }
+        }
+
+        total_distance
+    }
+
+    pub fn tip_count_all(&self) -> usize {
+        self.tip_count_all
+    }
+
+    pub fn internal_node_count_all(&self) -> usize {
+        self.internal_node_count_all
+    }
+
+    pub fn node_count_all(&self) -> usize {
+        self.node_count_all
+    }
+
+    // =========================================================================
+    // Node Access
+    // =========================================================================
+
+    pub fn node(&self, node_id: Option<NodeId>) -> Option<&Node> {
+        if let Some(node_id) = node_id { self.nodes.get(node_id) } else { None }
+    }
+
+    pub fn node_mut(&mut self, node_id: Option<NodeId>) -> Option<&mut Node> {
+        if let Some(node_id) = node_id {
+            self.nodes.get_mut(node_id)
+        } else {
+            None
+        }
+    }
+
+    pub fn node_exists(&self, node_id: Option<NodeId>) -> bool {
+        self.node(node_id).is_some()
+    }
+
+    pub fn first_node_id(&self) -> Option<NodeId> {
+        self.first_node_id
+    }
+
+    pub fn node_ids_all(&self) -> Vec<NodeId> {
+        self.nodes.keys().collect()
+    }
+
+    pub fn node_id_by_label<'a>(
+        &self,
+        label: impl Into<&'a str>,
+    ) -> Option<NodeId> {
+        let label: &str = label.into();
+        self.nodes.iter().find_map(|(node_id, node)| {
+            if let Some(node_label) = node.node_label() {
+                if node_label == label.into() { Some(node_id) } else { None }
+            } else {
+                None
+            }
+        })
+    }
+
+    pub fn label(&self, node_id: &NodeId) -> Option<Arc<str>> {
+        self.nodes[*node_id].node_label()
+    }
+
+    // =========================================================================
+    // Tree Traversal
+    // =========================================================================
+
+    pub fn path(
+        &self,
+        right_node_id: &NodeId,
+        left_node_id: &NodeId,
+    ) -> Vec<NodeId> {
+        if left_node_id == right_node_id {
+            return Vec::new();
+        }
+
+        let mut path = Vec::new();
+        let mut current_node_id = right_node_id;
+
+        while let Some(parent_node_id) = self.parent_id(current_node_id) {
+            if parent_node_id == left_node_id {
+                break;
+            }
+            path.push(*parent_node_id);
+            current_node_id = parent_node_id;
+        }
+
+        path
+    }
+
+    pub fn parent_id(&self, node_id: &NodeId) -> Option<&NodeId> {
+        self.nodes[*node_id].parent_id()
+    }
+
+    pub fn child_ids(&self, node_id: &NodeId) -> &[NodeId] {
+        self.nodes[*node_id].child_ids()
+    }
+
+    pub fn first_child_id(&self, node_id: &NodeId) -> Option<&NodeId> {
+        self.child_ids(node_id).first()
+    }
+
+    pub fn last_child_id(&self, node_id: &NodeId) -> Option<&NodeId> {
+        self.child_ids(node_id).last()
+    }
+
+    pub fn children(&self, node_id: &NodeId) -> Vec<&Node> {
+        let mut result = Vec::new();
+        for &child_id in self.child_ids(node_id) {
+            let child_node = &self.nodes[child_id];
+            result.push(child_node);
+        }
+        result
+    }
+
+    pub fn child_count(&self, node_id: &NodeId) -> usize {
+        self.nodes[*node_id].child_node_count()
+    }
+
+    pub fn child_count_recursive(&self, node_id: &NodeId) -> usize {
+        let children = self.child_ids(node_id);
+        children.len()
+            + children
+                .iter()
+                .map(|child_id| self.child_count_recursive(child_id))
+                .sum::<usize>()
+    }
+
+    pub fn is_tip(&self, node_id: &NodeId) -> bool {
+        self.nodes[*node_id].is_tip()
+    }
+
+    pub fn tip_node_ids(&self, node_id: &NodeId) -> Vec<NodeId> {
+        let mut result = Vec::new();
+        self.collect_tip_ids_recursive(*node_id, &mut result);
+        result
+    }
+
+    fn collect_tip_ids_recursive(
+        &self,
+        node_id: NodeId,
+        result: &mut Vec<NodeId>,
+    ) {
+        if self.is_tip(&node_id) {
+            result.push(node_id);
+        } else {
+            for child_id in self.child_ids(&node_id) {
+                self.collect_tip_ids_recursive(*child_id, result);
+            }
+        }
+    }
+
+    pub fn tip_node_ids_all(&self) -> Vec<NodeId> {
+        if let Some(id) = self.first_node_id {
+            self.tip_node_ids(&id)
+        } else {
+            Vec::new()
+        }
+    }
+
+    pub fn tip_count_recursive(&self, node_id: &NodeId) -> usize {
+        let mut count: usize = 0;
+        for child_id in self.child_ids(node_id) {
+            if !self.is_tip(child_id) {
+                count += self.tip_count_recursive(child_id);
+            } else {
+                count += 1;
+            }
+        }
+        count
+    }
+
+    pub fn tip_count(&self, node_id: &NodeId) -> usize {
+        let mut count: usize = 0;
+        for child_node in self.children(node_id) {
+            if child_node.is_tip() {
+                count += 1;
+            }
+        }
+        count
+    }
+
+    pub fn bounding_tip_ids_for_clade<'a>(
+        &'a self,
+        node_id: &'a NodeId,
+    ) -> (&'a NodeId, &'a NodeId) {
+        (
+            self.first_tip_id_for_clade(node_id),
+            self.last_tip_id_for_clade(node_id),
+        )
+    }
+
+    pub fn first_tip_id_for_clade<'a>(
+        &'a self,
+        node_id: &'a NodeId,
+    ) -> &'a NodeId {
+        match self.first_child_id(node_id) {
+            Some(child_id) => self.first_tip_id_for_clade(child_id),
+            None => node_id,
+        }
+    }
+
+    pub fn last_tip_id_for_clade<'a>(
+        &'a self,
+        node_id: &'a NodeId,
+    ) -> &'a NodeId {
+        match self.last_child_id(node_id) {
+            Some(child_id) => self.last_tip_id_for_clade(child_id),
+            None => node_id,
+        }
+    }
+
+    // =========================================================================
+    // Rooting Operations
+    // =========================================================================
+
+    pub fn is_rooted(&self) -> bool {
+        if let Some(node) = self.node(self.first_node_id()) {
+            return node.node_type() == NodeType::Root;
+        }
+        false
+    }
+
+    pub fn is_valid_potential_outgroup_node(&self, node_id: &NodeId) -> bool {
+        if let Some(first_node_id) = &self.first_node_id {
+            if node_id == first_node_id {
+                return false;
+            }
+            if self.is_rooted() {
+                let bad_outgroups = self.child_ids(first_node_id);
+                if bad_outgroups.contains(node_id) {
+                    return false;
+                }
+            }
+        }
+        true
+    }
+
+    pub fn root(&mut self, node_id: NodeId) -> Result<NodeId, TreeError> {
+        if !self.is_valid_potential_outgroup_node(&node_id) {
+            return Err(TreeError::InvalidOutgroupNode(node_id));
+        }
+
+        let yanked_node = self.unroot();
+
+        if let Some(left_node_id) = self.first_node_id {
+            let new_root_id = self
+                .add_new_node(<Option<&str>>::None, None, None)
+                .ok()
+                .unwrap();
+
+            let path = self.path(&node_id, &left_node_id);
+
+            let branch_length_new_outgroup: TreeFloat =
+                self.branch_length(node_id).unwrap_or_default() / 2e0;
+
+            let branch_attributes_new_outgroup =
+                self.branch_attributes(node_id);
+
+            if self.has_branch_lengths {
+                self.nodes[node_id]
+                    .set_branch_length(Some(branch_length_new_outgroup));
+            }
+
+            self.nodes[node_id].set_parent_id(Some(new_root_id));
+            self.nodes[new_root_id].add_child_id(node_id);
+
+            let mut previous_branch_length = branch_length_new_outgroup;
+            let mut previous_branch_attributes = branch_attributes_new_outgroup;
+            let mut previous_parent_node_id = new_root_id;
+
+            for &path_node_id in &path {
+                let temporary_branch_length =
+                    self.branch_length(path_node_id).unwrap_or_default();
+
+                let temporary_branch_attributes =
+                    self.branch_attributes(path_node_id);
+
+                if self.has_branch_lengths {
+                    self.nodes[path_node_id]
+                        .set_branch_length(Some(previous_branch_length));
+                }
+
+                self.nodes[path_node_id]
+                    .set_branch_attributes(previous_branch_attributes);
+
+                self.nodes[previous_parent_node_id].add_child_id(path_node_id);
+
+                self.nodes[path_node_id]
+                    .set_parent_id(Some(previous_parent_node_id));
+
+                self.nodes[path_node_id]
+                    .remove_child_id(&previous_parent_node_id);
+
+                self.nodes[path_node_id].remove_child_id(&node_id);
+
+                previous_branch_attributes = temporary_branch_attributes;
+                previous_branch_length = temporary_branch_length;
+                previous_parent_node_id = path_node_id;
+            }
+
+            let mut new_node_label: Option<String> = self.nodes[left_node_id]
+                .node_label()
+                .map(|node_label| node_label.to_string());
+
+            if let Some(yanked_node) = yanked_node
+                && let Some(label) = yanked_node.node_label()
+            {
+                new_node_label = Some(label.to_string());
+            }
+
+            let new_last = self
+                .add_new_node(
+                    new_node_label.as_deref(),
+                    None,
+                    Some(previous_parent_node_id),
+                )
+                .ok()
+                .unwrap();
+
+            if self.has_branch_lengths {
+                self.nodes[new_last]
+                    .set_branch_length(Some(previous_branch_length));
+            }
+
+            self.nodes[new_last]
+                .set_branch_attributes(previous_branch_attributes);
+
+            let node_id_to_ignore: NodeId =
+                if !path.is_empty() { path[path.len() - 1] } else { node_id };
+
+            let temporary_child_ids = self.child_ids(&left_node_id).to_vec();
+
+            for child_node_id in temporary_child_ids {
+                if child_node_id != node_id_to_ignore {
+                    self.nodes[new_last].add_child_id(child_node_id);
+                    self.nodes[child_node_id].set_parent_id(Some(new_last));
+                }
+            }
+            _ = self.nodes.remove(left_node_id);
+        }
+
+        self.edges = None;
+        self.validate(true)
+    }
+
+    pub fn unroot(&mut self) -> Option<Node> {
+        let mut yanked_node: Option<Node> = None;
+        if let Some(node_to_drop_id) = self.select_root_child_node_to_drop() {
+            self.slide_brlen_through_root(node_to_drop_id);
+            yanked_node = self.node(Some(node_to_drop_id)).cloned();
+            self.yank_node(node_to_drop_id);
+            self.edges = None;
+            let _ = self.validate(true);
+        }
+        yanked_node
+    }
+
+    fn yank_node(&mut self, node_id: NodeId) {
+        let child_ids = self.child_ids(&node_id).to_vec();
+        if let Some(parent_node_id) = self.nodes[node_id].parent_id() {
+            let parent_node_id: NodeId = *parent_node_id;
+            let parent_node = self.nodes.get_mut(parent_node_id).unwrap();
+
+            parent_node.remove_child_id(&node_id);
+
+            for &child_id in &child_ids {
+                parent_node.add_child_id(child_id);
+            }
+
+            for &child_id in &child_ids {
+                let child_node = self.nodes.get_mut(child_id).unwrap();
+                child_node.set_parent_id(Some(parent_node_id));
+            }
+
+            _ = self.nodes.remove(node_id);
+        }
+    }
+
+    fn slide_brlen_through_root(&mut self, source_node_id: NodeId) {
+        if !self.is_rooted() || !self.has_branch_lengths {
+            return;
+        }
+
+        let mut receive_node_id: NodeId = source_node_id;
+        for &other_id in self.child_ids(&self.first_node_id.unwrap()) {
+            if other_id != source_node_id {
+                receive_node_id = other_id;
+            }
+        }
+
+        assert_ne!(source_node_id, receive_node_id);
+
+        let source_node = &self.nodes[source_node_id];
+        let receive_node = &self.nodes[receive_node_id];
+
+        let mut new_brlen: TreeFloat = 0e0;
+        if let Some(source_brlen) = source_node.branch_length() {
+            if let Some(receive_brlen) = receive_node.branch_length() {
+                new_brlen = receive_brlen + source_brlen;
+            } else {
+                new_brlen = source_brlen;
+            }
+        }
+
+        self.nodes[source_node_id].set_branch_length(Some(0e0));
+        self.nodes[receive_node_id].set_branch_length(Some(new_brlen));
+    }
+
+    fn select_root_child_node_to_drop(&self) -> Option<NodeId> {
+        if !self.is_rooted() {
+            return None;
+        }
+        if let Some(root_node) = self.node(self.first_node_id)
+            && root_node.child_node_count() != 2
+        {
+            return None;
+        }
+        let root_child_nodes = self.children(&self.first_node_id.unwrap());
+        let child_node_1 = root_child_nodes[0];
+        let child_node_2 = root_child_nodes[1];
+
+        if child_node_1.is_tip() && child_node_2.is_tip() {
+            return None;
+        }
+
+        // At this point we know that at most one of child_node_1 and
+        // child_node_2 could still be a tip.
+        let node_to_drop;
+        if child_node_1.is_tip() || child_node_2.is_tip() {
+            if child_node_1.is_tip() {
+                // child_node_1 is a tip.
+                node_to_drop = child_node_2;
+            } else {
+                // child_node_2 must be a tip a this point.
+                node_to_drop = child_node_1;
+            }
+        } else {
+            // The only possible state at this point is that neither
+            // child_node_1 or child_node_2 are tips. Arbitrarily drop the one
+            // with more total descending tips.
+            let tip_count_1 =
+                self.tip_count_recursive(child_node_1.node_id().unwrap());
+            let tip_count_2 =
+                self.tip_count_recursive(child_node_2.node_id().unwrap());
+
+            if tip_count_1 > tip_count_2 {
+                node_to_drop = child_node_1;
+            } else {
+                node_to_drop = child_node_2;
+            }
+        }
+
+        node_to_drop.node_id().copied()
+    }
+
+    // =========================================================================
+    // Edge Operations
+    // =========================================================================
+
+    pub fn needs_edge_rebuild(&self) -> bool {
+        self.edges.is_none()
+    }
+
+    pub fn rebuild_edges(&mut self) {
+        if let Some(_) = self.first_node_id
+            && self.needs_edge_rebuild()
+        {
+            let mut edges = flatten_tree(self);
+
+            for (edge_index, edge) in edges.iter_mut().enumerate() {
+                edge.edge_index = edge_index;
+                self.nodes[edge.node_id].set_edge_index(edge_index);
+            }
+
+            self.edges = Some(edges);
+        }
+    }
+
+    pub fn edges(&self) -> Option<&Vec<Edge>> {
+        self.edges.as_ref()
+    }
+
+    pub fn edge_index_for_node_id(&self, node_id: NodeId) -> Option<usize> {
+        self.node(Some(node_id))?.edge_index()
+    }
+
+    pub fn bounding_tip_edges_for_clade(
+        &self,
+        node_id: &NodeId,
+    ) -> Option<(&Edge, &Edge)> {
+        if !self.node_exists(Some(*node_id)) {
+            return None;
+        }
+
+        let edges = self.edges()?;
+        let (&tip_node_id_0, &tip_node_id_1) =
+            self.bounding_tip_ids_for_clade(node_id);
+        let start: &Edge =
+            &edges[self.edge_index_for_node_id(tip_node_id_0)?];
+        let end: &Edge = &edges[self.edge_index_for_node_id(tip_node_id_1)?];
+
+        Some((start, end))
+    }
+
+    pub fn bounding_edges_for_clade(
+        &self,
+        node_id: &NodeId,
+    ) -> Option<(Vec<Edge>, Vec<Edge>)> {
+        if !self.node_exists(Some(*node_id)) {
+            return None;
+        }
+
+        let edges = self.edges()?;
+
+        let (top_tip_node_id, bottom_tip_node_id) =
+            self.bounding_tip_ids_for_clade(node_id);
+
+        let mut edges_top: Vec<Edge> = Vec::new();
+        let mut edges_bottom: Vec<Edge> = Vec::new();
+
+        let path_top = self.path(top_tip_node_id, node_id);
+        let path_bottom = self.path(bottom_tip_node_id, node_id);
+
+        edges_top.push(
+            edges[self.edge_index_for_node_id(*top_tip_node_id)?].clone(),
+        );
+
+        for path_node_id in path_top {
+            let edge = &edges[self.edge_index_for_node_id(path_node_id)?];
+            edges_top.push(edge.clone());
+        }
+
+        for &path_node_id in path_bottom.iter().rev() {
+            let edge = &edges[self.edge_index_for_node_id(path_node_id)?];
+            edges_bottom.push(edge.clone());
+        }
+
+        edges_bottom.push(
+            edges[self.edge_index_for_node_id(*bottom_tip_node_id)?].clone(),
+        );
+
+        Some((edges_top, edges_bottom))
+    }
+
+    // =========================================================================
+    // Tree Manipulation
+    // =========================================================================
+
+    pub fn sort(&mut self, reverse: bool) {
+        if let Some(node_id) = self.first_node_id {
+            self.sort_nodes(node_id, reverse);
+            self.edges = None;
+            self.rebuild_edges();
+        }
+    }
+
+    pub fn sorted(tree: &Self, reverse: bool) -> Self {
+        let mut temporary_tree = tree.clone();
+        temporary_tree.sort(reverse);
+        temporary_tree
+    }
+
+    fn sort_nodes(&mut self, node_id: NodeId, reverse: bool) {
+        let mut sorted_ids: Vec<NodeId> =
+            self.nodes[node_id].child_ids().to_vec();
+        sorted_ids.par_sort_by_key(|c| self.child_count_recursive(c));
+        if reverse {
+            sorted_ids.reverse();
+        }
+        for &child_node_id in &sorted_ids {
+            self.sort_nodes(child_node_id, reverse);
+        }
+        self.nodes[node_id].set_child_ids(sorted_ids);
+    }
+
+    // =========================================================================
+    // Attributes
+    // =========================================================================
+
+    pub fn branch_attributes(
+        &self,
+        node_id: NodeId,
+    ) -> HashMap<String, Attribute> {
+        self.nodes[node_id].branch_attributes()
+    }
+
+    pub fn node_attributes(
+        &self,
+        node_id: NodeId,
+    ) -> HashMap<String, Attribute> {
+        self.nodes[node_id].node_attributes()
+    }
+
+    pub fn branch_attribute_keys(&self) -> Vec<String> {
+        let mut result: FxHashSet<String> = FxHashSet::default();
+        for node in self.nodes.values() {
+            let attribute_keys: FxHashSet<String> = FxHashSet::from_iter(
+                self.branch_attributes(*node.node_id().unwrap())
+                    .keys()
+                    .cloned(),
+            );
+            result.extend(attribute_keys);
+        }
+        result.into_iter().collect()
+    }
+
+    pub fn node_attribute_keys(&self) -> Vec<String> {
+        let mut result: FxHashSet<String> = FxHashSet::default();
+        for node in self.nodes.values() {
+            let attribute_keys: FxHashSet<String> = FxHashSet::from_iter(
+                self.node_attributes(*node.node_id().unwrap()).keys().cloned(),
+            );
+            result.extend(attribute_keys);
+        }
+        result.into_iter().collect()
+    }
+
+    pub fn branch_length(&self, node_id: NodeId) -> Option<TreeFloat> {
+        if self.has_branch_lengths {
+            self.nodes[node_id].branch_length()
+        } else if Some(node_id) == self.first_node_id() {
+            None
+        } else {
+            Some(1e0)
+        }
+    }
+
+    // =========================================================================
+    // Display
+    // =========================================================================
+
     fn print_tree(&self) -> String {
-        let mut rv: String = String::new();
-        rv.push_str(&format!(
+        let mut result: String = String::new();
+        result.push_str(&format!(
             "Internal Nodes: {}\nTips: {}\nAll Nodes: {}\n{}\nHeight: {:7.5}\nBranch lengths: {}\n\n",
             self.internal_node_count_all,
             self.tip_count_all,
@@ -859,25 +946,25 @@ impl Tree {
         ));
 
         if let Some(node) = self.node(self.first_node_id) {
-            rv.push_str(&self.print_node(node, 0));
+            result.push_str(&self.print_node(node, 0));
         }
 
-        rv
+        result
     }
 
     fn print_node(&self, node: &Node, _level: usize) -> String {
-        let mut rv: String = String::new();
-        let branch_props: String = node
-            .branch_props()
+        let mut result: String = String::new();
+        let branch_attributes_text: String = node
+            .branch_attributes()
             .iter()
-            .map(|(k, v)| format!("{k}: {v}; "))
+            .map(|(key, value)| format!("{key}: {value}; "))
             .collect();
-        let node_props: String = node
-            .node_props()
+        let node_attributes_text: String = node
+            .node_attributes()
             .iter()
-            .map(|(k, v)| format!("{k}: {v}; "))
+            .map(|(key, value)| format!("{key}: {value}; "))
             .collect();
-        rv.push_str(&format!(
+        result.push_str(&format!(
             "{}- {} | {} | {:<5.3} | {} | {}| {}\n",
             " ".repeat(_level * 4),
             if let Some(node_id) = node.node_id() {
@@ -885,26 +972,28 @@ impl Tree {
             } else {
                 "None".to_string()
             },
-            if let Some(name) = &node.node_label() {
-                name.to_string()
+            if let Some(label) = &node.node_label() {
+                label.to_string()
             } else {
                 "None".to_string()
             },
-            if let Some(brlen) = node.branch_length() {
-                brlen
+            if let Some(branch_length) = node.branch_length() {
+                branch_length
             } else {
                 TreeFloat::NAN
             },
             node.node_type(),
-            branch_props,
-            node_props,
+            branch_attributes_text,
+            node_attributes_text,
         ));
 
-        for &id in node.child_ids() {
-            rv.push_str(&self.print_node(&self.nodes[id], _level + 1));
+        for &child_node_id in node.child_ids() {
+            result.push_str(
+                &self.print_node(&self.nodes[child_node_id], _level + 1),
+            );
         }
 
-        rv
+        result
     }
 }
 
