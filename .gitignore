@@ -10,3 +10,4 @@ submodules/*
 /benchmark_results/**/*.svg
 /benchmark_results/**/*.json
 /z_old
+/other
