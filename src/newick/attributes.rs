@@ -216,8 +216,8 @@ pub fn split_comma_separated_attributes(s: &str) -> HashMap<String, Attribute> {
 ///   as NHX attributes.
 /// - **Generic attributes**: Keys starting with `&` have the prefix stripped.
 /// - **Key-value pairs**: Standard `key=value` format.
-/// - **Simple values**: Numeric values are treated as support values, others
-///   as generic values.
+/// - **Unnamed values**: Numeric values are stored as `unnamed_numeric`, others
+///   as `unnamed_text`.
 ///
 /// Arguments:
 /// - `part`: A single attribute part (e.g., `key=value`, `100`, `&attr=val`).
@@ -227,8 +227,8 @@ pub fn split_comma_separated_attributes(s: &str) -> HashMap<String, Attribute> {
 /// Examples:
 /// - `"bootstrap=95"`  → `{"bootstrap": "95"}`
 /// - `"&support=0.95"` → `{"support": "0.95"}`
-/// - `"100"`           → `{"support": "100"}` (numeric values default to support)
-/// - `"label"`         → `{"value": "label"}` (non-numeric values default to generic value)
+/// - `"100"`           → `{"unnamed_numeric": "100"}` (numeric values without key)
+/// - `"label"`         → `{"unnamed_text": "label"}` (non-numeric values without key)
 fn process_attribute(part: &str, result: &mut HashMap<String, Attribute>) {
     if part.is_empty() {
         return;
@@ -242,17 +242,11 @@ fn process_attribute(part: &str, result: &mut HashMap<String, Attribute>) {
             _ = result.insert(k.to_string(), v.into());
         }
     } else {
-        // Handle RAxML-style simple values (e.g., "100" becomes "support=100").
-        // ToDo: Implement better handling of value-only attributes.
+        // Handle value-only attributes without making assumptions about semantics
         if part.chars().all(|c| c.is_ascii_digit() || c == '.') {
-            _ = result.insert(
-                "support".to_string(),
-                Attribute::Decimal(part.parse().unwrap()),
-            );
+            _ = result.insert("unnamed_numeric".to_string(), part.into());
         } else {
-            // For non-numeric simple values, use a generic "value" key.
-            // ToDo: Implement better handling of value-only attributes.
-            _ = result.insert("value".to_string(), part.into());
+            _ = result.insert("unnamed_text".to_string(), part.into());
         }
     }
 }
