@@ -1026,19 +1026,13 @@ fn parse_rich_newick_extended_fields(
 
     let mut rich_attributes: HashMap<String, Attribute> = HashMap::new();
     if parts.len() > 1 && !parts[1].is_empty() {
-        if let Ok(attribute_value) = parts[1].parse() {
-            _ = rich_attributes.insert(
-                "bootstrap".to_string(),
-                Attribute::Integer(attribute_value),
-            );
+        if let Ok(attribute) = parts[1].parse() {
+            _ = rich_attributes.insert("bootstrap".to_string(), attribute);
         }
     }
     if parts.len() > 2 && !parts[2].is_empty() {
-        if let Ok(attribute_value) = parts[2].parse() {
-            _ = rich_attributes.insert(
-                "probability".to_string(),
-                Attribute::Decimal(attribute_value),
-            );
+        if let Ok(attribute) = parts[2].parse() {
+            _ = rich_attributes.insert("probability".to_string(), attribute);
         }
     }
 

@@ -1,100 +1,13 @@
-use super::{TreeFloat, TreeInt};
+use super::TreeFloat;
+use super::attribute::Attribute;
 use slotmap::new_key_type;
 use std::{
     collections::HashMap,
     fmt::{Debug, Display},
-    str::FromStr,
     sync::Arc,
 };
 
 new_key_type! { pub struct NodeId; }
-
-#[derive(Clone, PartialEq)]
-pub enum Attribute {
-    Text(String),
-    Decimal(TreeFloat),
-    Integer(TreeInt),
-    Range(TreeFloat, TreeFloat),
-}
-
-impl Debug for Attribute {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Text(arg0) => f.debug_tuple("Text").field(arg0).finish(),
-            Self::Decimal(arg0) => {
-                f.debug_tuple("Decimal").field(arg0).finish()
-            }
-            Self::Integer(arg0) => {
-                f.debug_tuple("Integer").field(arg0).finish()
-            }
-            Self::Range(arg0, arg1) => {
-                f.debug_tuple("Range").field(arg0).field(arg1).finish()
-            }
-        }
-    }
-}
-
-impl Display for Attribute {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                Attribute::Text(text) => text.to_string(),
-                Attribute::Decimal(decimal) => format!("{decimal}"),
-                Attribute::Integer(integer) => format!("{integer}"),
-                Attribute::Range(decimal_1, decimal_2) =>
-                    format!("{{{decimal_1},{decimal_2}}}"),
-            }
-        )
-    }
-}
-
-impl From<&str> for Attribute {
-    fn from(s: &str) -> Self {
-        s.to_string().into()
-    }
-}
-
-impl From<String> for Attribute {
-    fn from(s: String) -> Self {
-        if let Ok(integer) = s.parse() {
-            Attribute::Integer(integer)
-        } else if let Ok(decimal) = s.parse() {
-            Attribute::Decimal(decimal)
-        } else if let Ok(Attribute::Range(a, b)) = s.parse() {
-            Attribute::Range(a, b)
-        } else {
-            Attribute::Text(s)
-        }
-    }
-}
-
-impl FromStr for Attribute {
-    type Err = ();
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if s.starts_with('{') && s.ends_with('}') {
-            let split_s = s[1..s.len() - 1].split(',');
-            let r: Vec<&str> = split_s.collect();
-            if r.len() == 2 {
-                if let Ok(a) = r.first().unwrap().parse() {
-                    if let Ok(b) = r.last().unwrap().parse() {
-                        Ok(Attribute::Range(a, b))
-                    } else {
-                        Ok(Attribute::Text(s.to_owned()))
-                    }
-                } else {
-                    Ok(Attribute::Text(s.to_owned()))
-                }
-            } else {
-                Ok(Attribute::Text(s.to_owned()))
-            }
-        } else {
-            Ok(Attribute::Text(s.to_owned()))
-        }
-    }
-}
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, PartialOrd, Ord, Eq)]
 pub enum NodeType {

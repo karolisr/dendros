@@ -1,7 +1,8 @@
 use super::Edge;
 use super::TreeFloat;
+use super::attribute::{Attribute, AttributeType};
 use super::flatten_tree;
-use super::node::{Attribute, Node, NodeId, NodeType};
+use super::node::{Node, NodeId, NodeType};
 use rayon::prelude::*;
 use rustc_hash::FxHashSet;
 use slotmap::SlotMap;
@@ -29,6 +30,12 @@ pub enum TreeError {
     InvalidTree(String),
     #[error("Cannot use this node as outgroup: {0}.")]
     InvalidOutgroupNode(NodeId),
+    #[error("Attribute key '{0}' already exists and cannot be renamed to.")]
+    AttributeKeyAlreadyExists(String),
+    #[error("Attribute '{0}' not found on node {1}.")]
+    AttributeNotFound(String, NodeId),
+    #[error("Attribute type mismatch: cannot convert {0} to {1}.")]
+    AttributeTypeMismatch(String, String),
 }
 
 impl Tree {
@@ -182,7 +189,196 @@ impl Tree {
             self.rebuild_edges();
         }
 
+        // Validate attribute type consistency.
+        self.validate_and_unify_attribute_types()?;
+
         Ok(self.first_node_id.unwrap())
+    }
+
+    /// Validates and unifies attribute types across all nodes to ensure consistency.
+    fn validate_and_unify_attribute_types(&mut self) -> Result<(), TreeError> {
+        use std::collections::HashMap;
+
+        let mut node_attribute_types: HashMap<String, Vec<AttributeType>> =
+            HashMap::new();
+
+        let mut branch_attribute_types: HashMap<String, Vec<AttributeType>> =
+            HashMap::new();
+
+        // First pass: collect all attribute types.
+        for node in self.nodes.values() {
+            let node_attrs = node.node_attributes();
+            let branch_attrs = node.branch_attributes();
+
+            for (key, attr) in node_attrs {
+                node_attribute_types
+                    .entry(key)
+                    .or_default()
+                    .push(attr.get_type());
+            }
+
+            for (key, attr) in branch_attrs {
+                branch_attribute_types
+                    .entry(key)
+                    .or_default()
+                    .push(attr.get_type());
+            }
+        }
+
+        // Second pass: determine unified types for each attribute key.
+        let mut unified_node_types: HashMap<String, AttributeType> =
+            HashMap::new();
+
+        let mut unified_branch_types: HashMap<String, AttributeType> =
+            HashMap::new();
+
+        for (key, types) in node_attribute_types {
+            let unified_type =
+                Self::unify_attribute_types(&types, &key, "node")?;
+            let _ = unified_node_types.insert(key, unified_type);
+        }
+
+        for (key, types) in branch_attribute_types {
+            let unified_type =
+                Self::unify_attribute_types(&types, &key, "branch")?;
+            let _ = unified_branch_types.insert(key, unified_type);
+        }
+
+        // Third pass: convert attributes to unified types.
+        for node in self.nodes.values_mut() {
+            let mut updated_node_attrs = HashMap::new();
+            let mut updated_branch_attrs = HashMap::new();
+
+            for (key, attr) in node.node_attributes() {
+                if let Some(target_type) = unified_node_types.get(&key) {
+                    let unified_attr =
+                        Self::convert_attribute_to_type(attr, target_type)?;
+                    let _ = updated_node_attrs.insert(key, unified_attr);
+                } else {
+                    let _ = updated_node_attrs.insert(key, attr);
+                }
+            }
+
+            for (key, attr) in node.branch_attributes() {
+                if let Some(target_type) = unified_branch_types.get(&key) {
+                    let unified_attr =
+                        Self::convert_attribute_to_type(attr, target_type)?;
+                    let _ = updated_branch_attrs.insert(key, unified_attr);
+                } else {
+                    let _ = updated_branch_attrs.insert(key, attr);
+                }
+            }
+
+            node.set_node_attributes(updated_node_attrs);
+            node.set_branch_attributes(updated_branch_attrs);
+        }
+
+        Ok(())
+    }
+
+    /// Gets the unified type for a specific attribute key across all nodes.
+    fn get_unified_type_for_key(
+        &self,
+        key: &str,
+        is_branch: bool,
+    ) -> Option<AttributeType> {
+        let mut attribute_types: Vec<AttributeType> = Vec::new();
+
+        for node in self.nodes.values() {
+            let attrs = if is_branch {
+                node.branch_attributes()
+            } else {
+                node.node_attributes()
+            };
+
+            if let Some(attr) = attrs.get(key) {
+                attribute_types.push(attr.get_type());
+            }
+        }
+
+        if attribute_types.is_empty() {
+            return None;
+        }
+
+        let mut unified_type = attribute_types[0].clone();
+        for current_type in attribute_types.iter().skip(1) {
+            if let Some(new_unified) =
+                Attribute::get_unified_type(&unified_type, current_type)
+            {
+                unified_type = new_unified;
+            } else {
+                return None;
+            }
+        }
+
+        Some(unified_type)
+    }
+
+    /// Unifies a list of attribute types into a single consistent type.
+    fn unify_attribute_types(
+        types: &[AttributeType],
+        key: &str,
+        attr_kind: &str,
+    ) -> Result<AttributeType, TreeError> {
+        if types.is_empty() {
+            return Err(TreeError::InvalidTree(format!(
+                "No types found for {} attribute '{}'",
+                attr_kind, key
+            )));
+        }
+
+        let mut unified_type = types[0].clone();
+
+        for (i, current_type) in types.iter().enumerate().skip(1) {
+            if let Some(new_unified) =
+                Attribute::get_unified_type(&unified_type, current_type)
+            {
+                unified_type = new_unified;
+            } else {
+                return Err(TreeError::InvalidTree(format!(
+                    "Incompatible types for {} attribute '{}': cannot unify {:?} (from node {}) with {:?}",
+                    attr_kind, key, unified_type, i, current_type
+                )));
+            }
+        }
+
+        Ok(unified_type)
+    }
+
+    /// Converts an attribute to match a target type.
+    fn convert_attribute_to_type(
+        attr: Attribute,
+        target_type: &AttributeType,
+    ) -> Result<Attribute, TreeError> {
+        let current_type = attr.get_type();
+
+        // If types already match, return as-is.
+        if current_type == *target_type {
+            return Ok(attr);
+        }
+
+        // Integer --> Decimal conversion.
+        match (current_type, target_type) {
+            (AttributeType::Integer, AttributeType::Decimal) => {
+                Ok(attr.unify_to_decimal())
+            }
+            (
+                AttributeType::List(current_items),
+                AttributeType::List(target_items),
+            ) => {
+                // Convert list items, if needed.
+                if current_items.len() != target_items.len() {
+                    return Err(TreeError::InvalidTree(format!(
+                        "List length mismatch: expected {} items, got {}",
+                        target_items.len(),
+                        current_items.len()
+                    )));
+                }
+
+                Ok(attr.unify_to_decimal()) // Integer -> Decimal conversion in lists.
+            }
+            _ => Ok(attr), // No conversion needed OR already handled.
+        }
     }
 
     // =========================================================================
@@ -924,6 +1120,220 @@ impl Tree {
         } else {
             Some(1e0)
         }
+    }
+
+    // =========================================================================
+    // Attribute Management
+    // =========================================================================
+
+    /// Rename a node attribute key across all nodes that have it.
+    ///
+    /// Arguments:
+    /// * `old_key` - The current attribute key name
+    /// * `new_key` - The new attribute key name
+    ///
+    /// Returns:
+    /// * `Ok(count)` - Number of nodes that had the attribute renamed
+    /// * `Err(TreeError::AttributeKeyAlreadyExists)` - If new_key already exists
+    pub fn rename_node_attribute_key(
+        &mut self,
+        old_key: &str,
+        new_key: &str,
+    ) -> Result<usize, TreeError> {
+        // Check if new_key already exists on any node
+        for node in self.nodes.values() {
+            if node.node_attributes().contains_key(new_key) {
+                return Err(TreeError::AttributeKeyAlreadyExists(
+                    new_key.to_string(),
+                ));
+            }
+        }
+
+        let mut count = 0;
+        for node in self.nodes.values_mut() {
+            let mut node_attrs = node.node_attributes();
+            if let Some(attr) = node_attrs.remove(old_key) {
+                let _ = node_attrs.insert(new_key.to_string(), attr);
+                node.set_node_attributes(node_attrs);
+                count += 1;
+            }
+        }
+
+        Ok(count)
+    }
+
+    /// Rename a branch attribute key across all nodes that have it.
+    ///
+    /// Arguments:
+    /// * `old_key` - The current attribute key name
+    /// * `new_key` - The new attribute key name
+    ///
+    /// Returns:
+    /// * `Ok(count)` - Number of nodes that had the attribute renamed
+    /// * `Err(TreeError::AttributeKeyAlreadyExists)` - If new_key already exists
+    pub fn rename_branch_attribute_key(
+        &mut self,
+        old_key: &str,
+        new_key: &str,
+    ) -> Result<usize, TreeError> {
+        // Check if new_key already exists on any branch
+        for node in self.nodes.values() {
+            if node.branch_attributes().contains_key(new_key) {
+                return Err(TreeError::AttributeKeyAlreadyExists(
+                    new_key.to_string(),
+                ));
+            }
+        }
+
+        let mut count = 0;
+        for node in self.nodes.values_mut() {
+            let mut branch_attrs = node.branch_attributes();
+            if let Some(attr) = branch_attrs.remove(old_key) {
+                let _ = branch_attrs.insert(new_key.to_string(), attr);
+                node.set_branch_attributes(branch_attrs);
+                count += 1;
+            }
+        }
+
+        Ok(count)
+    }
+
+    /// Change the value of a node attribute for a specific node.
+    ///
+    /// Arguments:
+    /// * `node_id` - The node to update
+    /// * `key` - The attribute key to change
+    /// * `new_value` - The new attribute value
+    ///
+    /// Returns:
+    /// * `Ok(())` - Success
+    /// * `Err(TreeError::ParentNodeDoesNotExist)` - If node doesn't exist
+    /// * `Err(TreeError::AttributeNotFound)` - If attribute doesn't exist on node
+    /// * `Err(TreeError::AttributeTypeMismatch)` - If new value type is incompatible
+    pub fn change_node_attribute_value(
+        &mut self,
+        node_id: NodeId,
+        key: &str,
+        new_value: Attribute,
+    ) -> Result<(), TreeError> {
+        if !self.node_exists(Some(node_id)) {
+            return Err(TreeError::ParentNodeDoesNotExist(node_id));
+        }
+
+        // Check if the attribute exists on the node
+        if !self
+            .node(Some(node_id))
+            .unwrap()
+            .node_attributes()
+            .contains_key(key)
+        {
+            return Err(TreeError::AttributeNotFound(key.to_string(), node_id));
+        }
+
+        // Get the unified type for this attribute key across all nodes.
+        let unified_type = self.get_unified_type_for_key(key, false);
+
+        // Get mutable reference to the node.
+        let node = self.node_mut(Some(node_id)).unwrap();
+
+        if let Some(unified_type) = unified_type {
+            // Validate that new_value can be converted to the unified type.
+            let new_value_type = new_value.get_type();
+            if !Attribute::can_unify_types(&new_value_type, &unified_type) {
+                return Err(TreeError::AttributeTypeMismatch(
+                    format!("{:?}", new_value_type),
+                    format!("{:?}", unified_type),
+                ));
+            }
+
+            // Convert new_value if needed.
+            let converted_value = if new_value_type != unified_type {
+                Self::convert_attribute_to_type(new_value, &unified_type)?
+            } else {
+                new_value
+            };
+
+            // Update the node's attribute.
+            let mut node_attrs = node.node_attributes();
+            let _ = node_attrs.insert(key.to_string(), converted_value);
+            node.set_node_attributes(node_attrs);
+        } else {
+            // If no unified type exists, just update the attribute
+            let mut node_attrs = node.node_attributes();
+            let _ = node_attrs.insert(key.to_string(), new_value);
+            node.set_node_attributes(node_attrs);
+        }
+
+        Ok(())
+    }
+
+    /// Change the value of a branch attribute for a specific node.
+    ///
+    /// Arguments:
+    /// * `node_id` - The node to update
+    /// * `key` - The attribute key to change
+    /// * `new_value` - The new attribute value
+    ///
+    /// Returns:
+    /// * `Ok(())` - Success
+    /// * `Err(TreeError::ParentNodeDoesNotExist)` - If node doesn't exist
+    /// * `Err(TreeError::AttributeNotFound)` - If attribute doesn't exist on node
+    /// * `Err(TreeError::AttributeTypeMismatch)` - If new value type is incompatible
+    pub fn change_branch_attribute_value(
+        &mut self,
+        node_id: NodeId,
+        key: &str,
+        new_value: Attribute,
+    ) -> Result<(), TreeError> {
+        if !self.node_exists(Some(node_id)) {
+            return Err(TreeError::ParentNodeDoesNotExist(node_id));
+        }
+
+        // Check if the attribute exists on the node
+        if !self
+            .node(Some(node_id))
+            .unwrap()
+            .branch_attributes()
+            .contains_key(key)
+        {
+            return Err(TreeError::AttributeNotFound(key.to_string(), node_id));
+        }
+
+        // Get the unified type for this attribute key across all nodes
+        let unified_type = self.get_unified_type_for_key(key, true);
+
+        // Get mutable reference to the node
+        let node = self.node_mut(Some(node_id)).unwrap();
+
+        if let Some(unified_type) = unified_type {
+            // Validate that new_value can be converted to the unified type
+            let new_value_type = new_value.get_type();
+            if !Attribute::can_unify_types(&new_value_type, &unified_type) {
+                return Err(TreeError::AttributeTypeMismatch(
+                    format!("{:?}", new_value_type),
+                    format!("{:?}", unified_type),
+                ));
+            }
+
+            // Convert new_value if needed
+            let converted_value = if new_value_type != unified_type {
+                Self::convert_attribute_to_type(new_value, &unified_type)?
+            } else {
+                new_value
+            };
+
+            // Update the node's attribute
+            let mut branch_attrs = node.branch_attributes();
+            let _ = branch_attrs.insert(key.to_string(), converted_value);
+            node.set_branch_attributes(branch_attrs);
+        } else {
+            // If no unified type exists, just update the attribute
+            let mut branch_attrs = node.branch_attributes();
+            let _ = branch_attrs.insert(key.to_string(), new_value);
+            node.set_branch_attributes(branch_attrs);
+        }
+
+        Ok(())
     }
 
     // =========================================================================
