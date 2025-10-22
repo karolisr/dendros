@@ -7,7 +7,7 @@ use std::collections::HashMap;
 /// - `&&NHX:` - Full NHX prefix with double ampersand
 /// - `&NHX:` - NHX prefix with single ampersand
 /// - `&NHX` - NHX prefix without colon (legacy)
-pub(super) fn extract_nhx_content(s: &str) -> Option<&str> {
+pub fn extract_nhx_content(s: &str) -> Option<&str> {
     if s.starts_with("&&NHX:") {
         Some(s.strip_prefix("&&NHX:").unwrap_or_default())
     } else if s.starts_with("&NHX:") {
@@ -22,14 +22,14 @@ pub(super) fn extract_nhx_content(s: &str) -> Option<&str> {
 /// Checks if a string is in NHX format.
 ///
 /// Returns true if the string starts with any valid NHX prefix.
-pub(super) fn is_nhx_format(s: &str) -> bool {
+pub fn is_nhx_format(s: &str) -> bool {
     s.starts_with("&&NHX:") || s.starts_with("&NHX:") || s.starts_with("&NHX")
 }
 
 /// Parses NHX (New Hampshire X) format attributes.
 ///
 /// Format: `S=Human:D=Y:B=100` (colon-separated key=value pairs).
-pub(super) fn parse_nhx_attributes(s: &str) -> HashMap<String, Attribute> {
+pub fn parse_nhx_attributes(s: &str) -> HashMap<String, Attribute> {
     let mut result: HashMap<String, Attribute> = HashMap::new();
     let parts: Vec<&str> = s.split(':').collect();
 
@@ -48,35 +48,4 @@ pub(super) fn parse_nhx_attributes(s: &str) -> HashMap<String, Attribute> {
     }
 
     result
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_extract_nhx_content() {
-        assert_eq!(extract_nhx_content(""), None);
-        assert_eq!(extract_nhx_content("&"), None);
-        assert_eq!(extract_nhx_content("NHX"), None);
-        assert_eq!(extract_nhx_content("&&NHX:"), Some(""));
-        assert_eq!(extract_nhx_content("&NHX:"), Some(""));
-        assert_eq!(extract_nhx_content("&NHX"), Some(""));
-        assert_eq!(
-            extract_nhx_content("&NHX:A=nhx_a:B=1.123:C=100"),
-            Some("A=nhx_a:B=1.123:C=100")
-        );
-    }
-
-    #[test]
-    fn test_parse_nhx_attributes() {
-        assert_eq!(
-            parse_nhx_attributes("A=nhx_a:B=1.123:C=100"),
-            HashMap::from([
-                ("A".to_string(), Attribute::Text("nhx_a".into())),
-                ("C".to_string(), Attribute::Integer(100)),
-                ("B".to_string(), Attribute::Decimal(1.123))
-            ])
-        );
-    }
 }

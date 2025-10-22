@@ -18,7 +18,10 @@ mod newick;
 mod nexus;
 mod phylo;
 
-pub use newick::{parse_newick, write_newick};
+pub use newick::{
+    extract_nhx_content, is_nhx_format, parse_newick, parse_nhx_attributes,
+    write_newick,
+};
 pub use nexus::{NexusError, parse_nexus, parse_nexus_advanced};
 pub use phylo::{
     Attribute, AttributeType, AttributeValue, AttributeValueType, Edge,

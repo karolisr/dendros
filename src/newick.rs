@@ -10,6 +10,7 @@ pub(crate) use attributes::{
     combine_attributes, extract_multiple_attribute_blocks, merge_attributes,
     split_label_and_attributes, split_respecting_brackets,
 };
+pub use nhx::{extract_nhx_content, is_nhx_format, parse_nhx_attributes};
 use validation::is_valid_newick_structure;
 
 /// Checks if a character is a NEWICK structural delimiter.
