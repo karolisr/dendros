@@ -1,4 +1,4 @@
-use super::{Attribute, NodeId, Tree, TreeFloat};
+use super::{NodeId, Tree, TreeFloat};
 use rayon::prelude::*;
 use std::{collections::HashMap, sync::Arc};
 
@@ -16,8 +16,6 @@ pub struct Edge {
     pub y: TreeFloat,
     pub is_tip: bool,
     pub edge_index: usize,
-    pub node_attributes: HashMap<String, Attribute>,
-    pub branch_attributes: HashMap<String, Attribute>,
 }
 
 pub(super) fn flatten_tree(tree: &Tree) -> Vec<Edge> {
@@ -50,8 +48,6 @@ fn flatten_tree_recursive(
     if tip_count == 0 {
         return (edges, Vec::new());
     }
-    let branch_attributes = tree.branch_attributes(node_id);
-    let node_attributes = tree.node_attributes(node_id);
     let branch_length: TreeFloat = tree.branch_length(node_id).unwrap_or(0e0);
     let branch_length_normalized: TreeFloat = branch_length / tree_height;
     let label: Option<Arc<str>> = tree.label(&node_id);
@@ -114,8 +110,6 @@ fn flatten_tree_recursive(
         y,
         is_tip,
         edge_index: 0,
-        node_attributes,
-        branch_attributes,
     };
 
     edges.push(this_edge);
