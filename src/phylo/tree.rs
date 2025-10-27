@@ -852,40 +852,160 @@ impl Tree {
         yanked_node
     }
 
+    /// Removes a node from the tree while preserving the tree structure by
+    /// connecting the node's children directly to its parent.
+    ///
+    /// This is a "yank" operation that pulls out a node from the tree topology
+    /// while maintaining connectivity between the remaining nodes. All children
+    /// of the yanked node become children of the yanked node's parent.
+    ///
+    /// **Operation Steps:**
+    /// 1. Collect all child node IDs of the node to be yanked
+    /// 2. Remove the yanked node from its parent's child list
+    /// 3. Add all children of the yanked node to its parent's child list
+    /// 4. Update the parent reference of all children to point to the yanked
+    ///    node's parent
+    /// 5. Remove the yanked node from the tree's node collection
+    ///
+    /// **Use Cases:**
+    /// - Removing "knuckle" nodes (nodes with only one child) during tree
+    ///   validation
+    /// - Unrooting operations where a root child node needs to be removed
+    /// - Tree restructuring operations that require node removal without
+    ///   breaking connectivity
+    ///
+    /// **Example Tree Transformation:**
+    /// ```text
+    /// Before yanking node B:     After yanking node B:
+    ///      A                           A
+    ///      |                          /|\
+    ///      B                         C D E
+    ///     /|\
+    ///    C D E
+    /// ```
+    ///
+    /// **Arguments:**
+    /// - `node_id` - The ID of the node to remove from the tree
+    ///
+    /// **Safety:**
+    ///
+    /// This function uses safe node access patterns with `get_mut()` and
+    /// handles cases where nodes might not exist gracefully. If the parent node
+    /// or any child nodes cannot be accessed, those operations are silently
+    /// skipped.
+    ///
+    /// **Note:**
+    ///
+    /// This operation does not preserve branch lengths or other node
+    /// attributes.If branch length preservation is needed, it should be handled
+    /// by the caller before calling this function.
+    ///
     fn yank_node(&mut self, node_id: NodeId) {
         let child_ids = self.child_ids(&node_id).to_vec();
         if let Some(parent_node_id) = self.nodes[node_id].parent_id() {
             let parent_node_id: NodeId = *parent_node_id;
-            let parent_node = self.nodes.get_mut(parent_node_id).unwrap();
 
-            parent_node.remove_child_id(&node_id);
+            if let Some(parent_node) = self.nodes.get_mut(parent_node_id) {
+                parent_node.remove_child_id(&node_id);
 
-            for &child_id in &child_ids {
-                parent_node.add_child_id(child_id);
+                for &child_id in &child_ids {
+                    parent_node.add_child_id(child_id);
+                }
             }
 
             for &child_id in &child_ids {
-                let child_node = self.nodes.get_mut(child_id).unwrap();
-                child_node.set_parent_id(Some(parent_node_id));
+                if let Some(child_node) = self.nodes.get_mut(child_id) {
+                    child_node.set_parent_id(Some(parent_node_id));
+                }
             }
 
             _ = self.nodes.remove(node_id);
         }
     }
 
+    /// Redistributes branch lengths through the root node during unrooting operations.
+    ///
+    /// This function is specifically designed to preserve total distances
+    /// when preparing a rooted tree for unrooting. It transfers the branch length from
+    /// one root child (the "source" node that will be removed) to its sibling (the
+    /// "receive" node that will remain), ensuring that no distance is lost
+    /// during the unrooting process.
+    ///
+    /// **Prerequisites:**
+    /// - Tree must be rooted (`is_rooted()` returns `true`)
+    /// - Tree must have branch lengths (`has_branch_lengths` is `true`)
+    ///
+    /// **Operation process:**
+    /// 1. **Validation**: Returns early if tree is unrooted or lacks branch lengths
+    /// 2. **Sibling identification**: Finds the sibling of the source node among root's children
+    /// 3. **Branch length calculation**: Combines source and receive node branch lengths
+    /// 4. **Length redistribution**:
+    ///    - Sets source node branch length to 0.0 (will be removed anyway)
+    ///    - Transfers combined length to the receive node
+    ///
+    /// **Branch length combination logic:**
+    /// - If both nodes have branch lengths: `new_length = source_length + receive_length`
+    /// - If only source has length: `new_length = source_length`
+    /// - If only receive has length: `new_length = receive_length` (unchanged)
+    /// - If neither has length: no change (both remain `None`)
+    ///
+    /// **Example transformation:**
+    /// ```text
+    /// Before sliding (rooted):        After sliding (preparing for unroot):
+    ///         Root                             Root
+    ///        /    \                           /    \
+    ///    A(0.1)  B(0.2)          -->      A(0.0)  B(0.3)
+    ///      /|\     /|\                      /|\     /|\
+    ///     D E F   G H I                    D E F   G H I
+    ///
+    /// After A is yanked, B will connect directly to the tree with length 0.3,
+    /// preserving the total distance: 0.1 + 0.2 = 0.3.
+    /// ```
+    ///
+    /// **Usage context:**
+    /// - Called exclusively during `unroot()` operation
+    /// - Invoked before `yank_node()` to ensure proper branch length handling
+    ///
+    /// **Arguments:**
+    /// - `source_node_id` - The root child node that will be removed (branch length donor)
+    ///
+    /// **Behavior:**
+    /// - **Early return**: If tree is unrooted or lacks branch lengths
+    /// - **Sibling detection**: Automatically identifies the other root child as receiver
+    /// - **Safety check**: Returns early if source and receive nodes are the same
+    /// - **Length preservation**: Ensures total distance is maintained
+    ///
+    /// **Safety:**
+    /// - Uses safe `first_node_id()` access
+    /// - Gracefully handles edge case where source and receive nodes are identical
+    /// - Does not panic on invalid input, preferring early return for robustness
+    ///
+    /// **Note:**
+    ///
+    /// This function assumes the caller has already validated that the tree is in a
+    /// valid state for unrooting (rooted tree with binary root). It's designed as a
+    /// helper function for `unroot()` and should not be called independently.
     fn slide_brlen_through_root(&mut self, source_node_id: NodeId) {
         if !self.is_rooted() || !self.has_branch_lengths {
             return;
         }
 
         let mut receive_node_id: NodeId = source_node_id;
-        for &other_id in self.child_ids(&self.first_node_id.unwrap()) {
-            if other_id != source_node_id {
-                receive_node_id = other_id;
+        if let Some(first_node_id) = self.first_node_id() {
+            for &other_id in self.child_ids(&first_node_id) {
+                if other_id != source_node_id {
+                    receive_node_id = other_id;
+                    break;
+                }
             }
         }
 
-        assert_ne!(source_node_id, receive_node_id);
+        if source_node_id == receive_node_id {
+            println!(
+                "This should not have happened: source_node_id == receive_node_id"
+            );
+            return;
+        }
 
         let source_node = &self.nodes[source_node_id];
         let receive_node = &self.nodes[receive_node_id];
