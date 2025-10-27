@@ -4,8 +4,8 @@ use super::newick::{
 use crate::{Attribute, Tree, parse_newick};
 use std::collections::HashMap;
 
-pub fn parse_nexus(content: String) -> Option<Vec<Tree>> {
-    match parse_nexus_advanced(&content) {
+pub fn parse_nexus(nexus_string: String) -> Option<Vec<Tree>> {
+    match parse_nexus_advanced(&nexus_string) {
         Ok(nexus_file) => {
             let trees: Vec<Tree> = nexus_file.trees.into_values().collect();
             if trees.is_empty() { None } else { Some(trees) }
@@ -14,8 +14,8 @@ pub fn parse_nexus(content: String) -> Option<Vec<Tree>> {
     }
 }
 
-pub fn parse_nexus_advanced(content: &str) -> NexusResult<NexusFile> {
-    let mut parser = NexusParser::new(content);
+pub fn parse_nexus_advanced(nexus_string: &str) -> NexusResult<NexusFile> {
+    let mut parser = NexusParser::new(nexus_string);
     parser.parse()
 }
 
