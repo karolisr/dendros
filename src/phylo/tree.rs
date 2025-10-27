@@ -110,11 +110,143 @@ impl Tree {
         Ok(node_ids)
     }
 
+    /// Removes a "knuckle" node from the tree while preserving branch length.
+    ///
+    /// A "knuckle" node is an internal node with exactly one child, which
+    /// represents an unnecessary degree-2 vertex in the tree topology. Such
+    /// nodes can arise from tree editing operations and should be removed to
+    /// maintain proper tree structure.
+    ///
+    /// **What constitutes a knuckle:**
+    /// - An internal node (not a tip) with exactly one child
+    /// - Creates unnecessary complexity in tree topology
+    /// - Often results from algorithmic artifacts or manual tree editing
+    ///
+    /// **Removal process:**
+    /// 1. **Branch length preservation**: Adds the knuckle node's branch length
+    ///    to its child's branch length, preserving total distance
+    /// 2. **Label consolidation**: Combines node labels using "\_KNUCKLE\_" as
+    ///    separator:
+    ///    - `knuckle_label + "_KNUCKLE_" + child_label` (both have labels)
+    ///    - `knuckle_label + "_KNUCKLE"` (only knuckle has label)
+    ///    - `"KNUCKLE_" + child_label` (only child has label)
+    ///    - No label change (neither has labels)
+    /// 3. **Topology update**: Uses `yank_node()` to remove the knuckle while
+    ///    connecting its child directly to its parent
+    ///
+    /// **Example transformation:**
+    /// ```text
+    /// Before knuckle removal:    After knuckle removal:
+    ///        A                         A
+    ///        | bl=0.1                  | bl=0.1+0.2=0.3
+    ///        B knuckle                 C
+    ///        | bl=0.2                 /|\
+    ///        C                       D E F
+    ///       /|\
+    ///      D E F
+    /// ```
+    ///
+    /// **Usage context:**
+    /// - Called during tree validation (`validate()`) for nodes with
+    ///   `NodeType::Unset`
+    /// - Automatically triggered when `knuckle_removal_pass=false` and any
+    ///   nodes with type `NodeType::Unset` are detected
+    ///
+    /// **Debug output:**
+    /// Prints removal information to stdout for debugging purposes, showing:
+    /// - Node IDs and labels involved in the operation
+    /// - Before/after state of affected nodes
+    ///
+    /// **Arguments:**
+    /// - `knuckle_node_id` - The ID of the putative knuckle node to examine and
+    ///   potentially remove
+    ///
+    /// **Behavior:**
+    /// - If the node has exactly one child: removes the knuckle as described
+    ///   above
+    /// - If the node has zero or multiple children: no operation performed
+    /// - Uses safe node access patterns, skipping operations if nodes cannot be
+    ///   accessed
+    ///
+    /// **Note:**
+    ///
+    /// This function only handles knuckle nodes (degree-2 vertices). It does
+    /// not validate or modify other aspects of tree topology.
+    ///
+    fn remove_knuckle(&mut self, knuckle_node_id: NodeId) {
+        let putative_knuckle_child_node_ids = self.child_ids(&knuckle_node_id);
+
+        // Check if this node is a knuckle.
+        if putative_knuckle_child_node_ids.len() == 1 {
+            let knuckle_branch_length_opt = self.branch_length(knuckle_node_id);
+            let knuckle_node_label_opt = self.label(&knuckle_node_id);
+            let child_node_id = putative_knuckle_child_node_ids[0];
+            let child_branch_length_opt = self.branch_length(child_node_id);
+            let child_node_label_opt = self.label(&child_node_id);
+
+            if let Some(child) = self.node_mut(Some(child_node_id)) {
+                // Adds knuckle's branch length to the child's branch length.
+                if let Some(knuckle_branch_length) = knuckle_branch_length_opt {
+                    if let Some(child_branch_length) = child_branch_length_opt {
+                        child.set_branch_length(Some(
+                            knuckle_branch_length + child_branch_length,
+                        ));
+                    }
+                }
+
+                // Updates child's node label by prepending knuckle's node label.
+                if let Some(knuckle_node_label) = knuckle_node_label_opt {
+                    if let Some(child_node_label) = child_node_label_opt {
+                        let new_node_label = format!(
+                            "{}_KNUCKLE_{}",
+                            knuckle_node_label, child_node_label
+                        );
+                        child.set_node_label(Some(new_node_label.as_str()));
+                        println!(
+                            "Removing knuckle: {}({}) -> {}({})",
+                            knuckle_node_id,
+                            knuckle_node_label,
+                            child_node_id,
+                            new_node_label
+                        );
+                    } else {
+                        let new_node_label =
+                            format!("{}_KNUCKLE", knuckle_node_label);
+                        child.set_node_label(Some(new_node_label.as_str()));
+                        println!(
+                            "Removing knuckle: {}({}) -> {}({})",
+                            knuckle_node_id,
+                            knuckle_node_label,
+                            child_node_id,
+                            new_node_label
+                        );
+                    }
+                } else if let Some(child_node_label) = child_node_label_opt {
+                    let new_node_label =
+                        format!("KNUCKLE_{}", child_node_label);
+                    child.set_node_label(Some(new_node_label.as_str()));
+                    println!(
+                        "Removing knuckle: {} -> {}({})",
+                        knuckle_node_id, child_node_id, new_node_label
+                    );
+                } else {
+                    println!(
+                        "Removing knuckle: {} -> {}",
+                        knuckle_node_id, child_node_id
+                    );
+                }
+
+                self.yank_node(knuckle_node_id);
+            }
+        }
+    }
+
     pub fn validate(
         &mut self,
         make_fresh_edges: bool,
+        knuckle_removal_pass: bool,
     ) -> Result<NodeId, TreeError> {
-        // let mut count_of_unset: usize = 0;
+        let mut count_of_unset: usize = 0;
         let mut count_of_tip: usize = 0;
         let mut count_of_internal: usize = 0;
         let mut count_of_first: usize = 0;
@@ -122,12 +254,12 @@ impl Tree {
 
         let mut has_branch_lengths: bool = false;
 
-        // let mut unset_node_ids: Vec<NodeId> = Vec::new();
+        let mut unset_node_ids: Vec<NodeId> = Vec::new();
         for node in self.nodes.values_mut() {
             match node.set_node_type() {
                 NodeType::Unset => {
-                    // unset_node_ids.push(*node.node_id().unwrap());
-                    // count_of_unset += 1
+                    unset_node_ids.push(*node.node_id().unwrap());
+                    count_of_unset += 1;
                 }
                 NodeType::Tip => count_of_tip += 1,
                 NodeType::Internal => count_of_internal += 1,
@@ -155,31 +287,42 @@ impl Tree {
             }
         }
 
-        // for node_id in unset_node_ids {
-        //     let node = self.node(Some(node_id));
-        //     let children = self.children(node_id);
-        //     println!("-- PARENT:\n{node:#?}");
-        //     println!("-- CHILDREN:\n{children:#?}")
-        // }
+        self.has_branch_lengths = has_branch_lengths;
+
+        // Removes knuckles.
+        if count_of_unset != 0 && !knuckle_removal_pass {
+            for putative_knuckle_node_id in unset_node_ids {
+                self.remove_knuckle(putative_knuckle_node_id);
+            }
+            return self.validate(make_fresh_edges, true);
+        }
+
+        // Count of "unset_node_ids" should be 0 after knuckle removal.
+        // This "for" loop should never execute; if it ever does, I didn't
+        // account for something.
+        for node_id in unset_node_ids {
+            let node = self.node(Some(node_id));
+            let child_nodes = self.children(&node_id);
+            println!("------        Node:\n{node:#?}");
+            println!("------ Child Nodes:\n{child_nodes:#?}");
+        }
 
         if count_of_first + count_of_root != 1 {
             return Err(TreeError::InvalidTree(format!(
-                "count_of_first({count_of_first}) + count_of_root({count_of_root}) should equal 1."
+                "count_of_first({count_of_first}) + count_of_root({count_of_root}) should equal 1"
             )));
         }
 
-        // if count_of_unset != 0 {
-        //     return Err(TreeError::InvalidTree(format!(
-        //         "count_of_unset({count_of_unset}) should equal 0."
-        //     )));
-        // }
+        if count_of_unset != 0 {
+            return Err(TreeError::InvalidTree(format!(
+                "count_of_unset({count_of_unset}) should equal 0"
+            )));
+        }
 
         self.tip_count_all = count_of_tip;
         self.internal_node_count_all =
             count_of_internal + count_of_first + count_of_root;
         self.node_count_all = self.tip_count_all + self.internal_node_count_all;
-
-        self.has_branch_lengths = has_branch_lengths;
 
         if let Some(node) = self.node_mut(self.first_node_id) {
             node.set_branch_length(None);
@@ -189,7 +332,6 @@ impl Tree {
             self.rebuild_edges();
         }
 
-        // Validate attribute type consistency.
         self.validate_and_unify_attribute_types()?;
 
         Ok(self.first_node_id.unwrap())
@@ -837,7 +979,7 @@ impl Tree {
         }
 
         self.edges = None;
-        self.validate(true)
+        self.validate(true, false)
     }
 
     pub fn unroot(&mut self) -> Option<Node> {
@@ -847,7 +989,7 @@ impl Tree {
             yanked_node = self.node(Some(node_to_drop_id)).cloned();
             self.yank_node(node_to_drop_id);
             self.edges = None;
-            let _ = self.validate(true);
+            let _ = self.validate(true, false);
         }
         yanked_node
     }
@@ -1530,5 +1672,315 @@ impl Tree {
 impl Display for Tree {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.print_tree())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Helper function to create a simple tree structure for testing.
+    /// Creates: Root -> Knuckle -> Child
+    fn create_knuckle_test_tree() -> (Tree, NodeId, NodeId, NodeId) {
+        let mut tree = Tree::new();
+
+        // Create root node
+        let root_id = tree.add_new_node(Some("root"), None, None).unwrap();
+
+        // Create knuckle node (will have exactly one child)
+        let knuckle_id = tree
+            .add_new_node(Some("knuckle"), Some(0.1), Some(root_id))
+            .unwrap();
+
+        // Create child node
+        let child_id = tree
+            .add_new_node(Some("child"), Some(0.2), Some(knuckle_id))
+            .unwrap();
+
+        // Ensure the tree has branch lengths flag set
+        tree.has_branch_lengths = true;
+
+        (tree, root_id, knuckle_id, child_id)
+    }
+
+    /// Helper function to create a tree with multiple children (not a knuckle).
+    fn create_non_knuckle_test_tree() -> (Tree, NodeId, NodeId) {
+        let mut tree = Tree::new();
+
+        // Create root node
+        let root_id = tree.add_new_node(Some("root"), None, None).unwrap();
+
+        // Create internal node with multiple children (not a knuckle)
+        let internal_id = tree
+            .add_new_node(Some("internal"), Some(0.1), Some(root_id))
+            .unwrap();
+
+        // Add multiple children to make it NOT a knuckle
+        let _child1_id = tree
+            .add_new_node(Some("child1"), Some(0.2), Some(internal_id))
+            .unwrap();
+
+        let _child2_id = tree
+            .add_new_node(Some("child2"), Some(0.3), Some(internal_id))
+            .unwrap();
+
+        // Ensure the tree has branch lengths flag set
+        tree.has_branch_lengths = true;
+
+        (tree, root_id, internal_id)
+    }
+
+    #[test]
+    fn test_remove_knuckle_with_both_labels() {
+        let (mut tree, root_id, knuckle_id, child_id) =
+            create_knuckle_test_tree();
+
+        // Verify initial state
+        assert_eq!(tree.label(&knuckle_id).as_deref(), Some("knuckle"));
+        assert_eq!(tree.label(&child_id).as_deref(), Some("child"));
+        assert_eq!(tree.branch_length(knuckle_id), Some(0.1));
+        assert_eq!(tree.branch_length(child_id), Some(0.2));
+        assert_eq!(tree.child_ids(&knuckle_id).len(), 1);
+
+        // Remove the knuckle
+        tree.remove_knuckle(knuckle_id);
+
+        // Verify knuckle node is removed
+        assert!(!tree.node_exists(Some(knuckle_id)));
+
+        // Verify child node is now connected to root
+        assert_eq!(tree.parent_id(&child_id), Some(&root_id));
+        assert!(tree.child_ids(&root_id).contains(&child_id));
+
+        // Verify branch length is combined
+        let expected = 0.3; // 0.1 + 0.2
+        let actual = tree.branch_length(child_id).unwrap();
+        assert!(
+            (actual - expected).abs() < f64::EPSILON,
+            "Expected {}, got {}",
+            expected,
+            actual
+        );
+
+        // Verify label is combined
+        assert_eq!(
+            tree.label(&child_id).as_deref(),
+            Some("knuckle_KNUCKLE_child")
+        );
+    }
+
+    #[test]
+    fn test_remove_knuckle_only_knuckle_has_label() {
+        let (mut tree, _root_id, knuckle_id, child_id) =
+            create_knuckle_test_tree();
+
+        // Remove child label
+        if let Some(child_node) = tree.node_mut(Some(child_id)) {
+            child_node.set_node_label(None::<&str>);
+        }
+
+        // Verify initial state
+        assert_eq!(tree.label(&knuckle_id).as_deref(), Some("knuckle"));
+        assert_eq!(tree.label(&child_id), None);
+
+        // Remove the knuckle
+        tree.remove_knuckle(knuckle_id);
+
+        // Verify label is set correctly
+        assert_eq!(tree.label(&child_id).as_deref(), Some("knuckle_KNUCKLE"));
+    }
+
+    #[test]
+    fn test_remove_knuckle_only_child_has_label() {
+        let (mut tree, _root_id, knuckle_id, child_id) =
+            create_knuckle_test_tree();
+
+        // Remove knuckle label
+        if let Some(knuckle_node) = tree.node_mut(Some(knuckle_id)) {
+            knuckle_node.set_node_label(None::<&str>);
+        }
+
+        // Verify initial state
+        assert_eq!(tree.label(&knuckle_id), None);
+        assert_eq!(tree.label(&child_id).as_deref(), Some("child"));
+
+        // Remove the knuckle
+        tree.remove_knuckle(knuckle_id);
+
+        // Verify label is set correctly
+        assert_eq!(tree.label(&child_id).as_deref(), Some("KNUCKLE_child"));
+    }
+
+    #[test]
+    fn test_remove_knuckle_no_labels() {
+        let (mut tree, root_id, knuckle_id, child_id) =
+            create_knuckle_test_tree();
+
+        // Remove both labels
+        if let Some(knuckle_node) = tree.node_mut(Some(knuckle_id)) {
+            knuckle_node.set_node_label(None::<&str>);
+        }
+        if let Some(child_node) = tree.node_mut(Some(child_id)) {
+            child_node.set_node_label(None::<&str>);
+        }
+
+        // Verify initial state
+        assert_eq!(tree.label(&knuckle_id), None);
+        assert_eq!(tree.label(&child_id), None);
+
+        // Remove the knuckle
+        tree.remove_knuckle(knuckle_id);
+
+        // Verify knuckle is removed and child is connected to root
+        assert!(!tree.node_exists(Some(knuckle_id)));
+        assert_eq!(tree.parent_id(&child_id), Some(&root_id));
+
+        // Verify label remains None
+        assert_eq!(tree.label(&child_id), None);
+    }
+
+    #[test]
+    fn test_remove_knuckle_branch_length_combinations() {
+        // Test case 1: Both have branch lengths - knuckle is removed in first test
+        let (mut tree, _root_id, knuckle_id, child_id) =
+            create_knuckle_test_tree();
+        assert_eq!(tree.branch_length(knuckle_id), Some(0.1));
+        assert_eq!(tree.branch_length(child_id), Some(0.2));
+
+        tree.remove_knuckle(knuckle_id);
+        let expected = 0.3; // 0.1 + 0.2
+        let actual = tree.branch_length(child_id).unwrap();
+        assert!(
+            (actual - expected).abs() < f64::EPSILON,
+            "Expected {}, got {}",
+            expected,
+            actual
+        );
+
+        // Test case 2: Only knuckle has branch length
+        let (mut tree2, _root_id2, knuckle_id2, child_id2) =
+            create_knuckle_test_tree();
+
+        // Remove child branch length
+        if let Some(child_node) = tree2.node_mut(Some(child_id2)) {
+            child_node.set_branch_length(None);
+        }
+
+        assert_eq!(tree2.branch_length(knuckle_id2), Some(0.1));
+        assert_eq!(tree2.branch_length(child_id2), None);
+
+        tree2.remove_knuckle(knuckle_id2);
+
+        // Child branch length should remain None when child has no branch length
+        assert_eq!(tree2.branch_length(child_id2), None);
+
+        // Test case 3: Only child has branch length
+        let (mut tree3, _root_id3, knuckle_id3, child_id3) =
+            create_knuckle_test_tree();
+
+        if let Some(knuckle_node) = tree3.node_mut(Some(knuckle_id3)) {
+            knuckle_node.set_branch_length(None);
+        }
+
+        assert_eq!(tree3.branch_length(knuckle_id3), None);
+        assert_eq!(tree3.branch_length(child_id3), Some(0.2));
+
+        tree3.remove_knuckle(knuckle_id3);
+
+        // Child branch length should remain unchanged when knuckle has no branch length
+        assert_eq!(tree3.branch_length(child_id3), Some(0.2));
+    }
+
+    #[test]
+    fn test_remove_knuckle_not_a_knuckle_no_children() {
+        let mut tree = Tree::new();
+        let leaf_id = tree.add_new_node(Some("leaf"), Some(0.1), None).unwrap();
+
+        // Ensure the tree has branch lengths flag set
+        tree.has_branch_lengths = true;
+
+        // Verify it's a leaf (no children)
+        assert_eq!(tree.child_ids(&leaf_id).len(), 0);
+        assert!(tree.node_exists(Some(leaf_id)));
+
+        // Try to remove as knuckle - should do nothing
+        tree.remove_knuckle(leaf_id);
+
+        // Node should still exist since it's not a knuckle
+        assert!(tree.node_exists(Some(leaf_id)));
+        assert_eq!(tree.label(&leaf_id).as_deref(), Some("leaf"));
+    }
+
+    #[test]
+    fn test_remove_knuckle_not_a_knuckle_multiple_children() {
+        let (mut tree, _root_id, internal_id) = create_non_knuckle_test_tree();
+
+        // Verify it has multiple children (not a knuckle)
+        assert_eq!(tree.child_ids(&internal_id).len(), 2);
+        assert!(tree.node_exists(Some(internal_id)));
+
+        // Try to remove as knuckle - should do nothing
+        tree.remove_knuckle(internal_id);
+
+        // Node should still exist since it's not a knuckle
+        assert!(tree.node_exists(Some(internal_id)));
+        assert_eq!(tree.label(&internal_id).as_deref(), Some("internal"));
+        assert_eq!(tree.child_ids(&internal_id).len(), 2);
+    }
+
+    #[test]
+    fn test_remove_knuckle_child_becomes_direct_descendant() {
+        let (mut tree, root_id, knuckle_id, child_id) =
+            create_knuckle_test_tree();
+
+        // Add grandchild to verify tree structure is maintained
+        let grandchild_id = tree
+            .add_new_node(Some("grandchild"), Some(0.3), Some(child_id))
+            .unwrap();
+
+        // Verify initial tree structure: root -> knuckle -> child -> grandchild
+        assert_eq!(tree.parent_id(&knuckle_id), Some(&root_id));
+        assert_eq!(tree.parent_id(&child_id), Some(&knuckle_id));
+        assert_eq!(tree.parent_id(&grandchild_id), Some(&child_id));
+
+        // Remove knuckle
+        tree.remove_knuckle(knuckle_id);
+
+        // Verify new tree structure: root -> child -> grandchild
+        assert!(!tree.node_exists(Some(knuckle_id)));
+        assert_eq!(tree.parent_id(&child_id), Some(&root_id));
+        assert_eq!(tree.parent_id(&grandchild_id), Some(&child_id));
+        assert!(tree.child_ids(&root_id).contains(&child_id));
+        assert!(tree.child_ids(&child_id).contains(&grandchild_id));
+    }
+
+    #[test]
+    fn test_remove_knuckle_with_no_branch_lengths_flag() {
+        let (mut tree, root_id, knuckle_id, child_id) =
+            create_knuckle_test_tree();
+
+        // Set has_branch_lengths to false to test different behavior
+        tree.has_branch_lengths = false;
+
+        // Verify initial state
+        assert_eq!(tree.label(&knuckle_id).as_deref(), Some("knuckle"));
+        assert_eq!(tree.label(&child_id).as_deref(), Some("child"));
+        assert_eq!(tree.child_ids(&knuckle_id).len(), 1);
+
+        // Remove the knuckle
+        tree.remove_knuckle(knuckle_id);
+
+        // Verify knuckle node is removed
+        assert!(!tree.node_exists(Some(knuckle_id)));
+
+        // Verify child node is now connected to root
+        assert_eq!(tree.parent_id(&child_id), Some(&root_id));
+        assert!(tree.child_ids(&root_id).contains(&child_id));
+
+        // Verify label is combined even when branch lengths are not used
+        assert_eq!(
+            tree.label(&child_id).as_deref(),
+            Some("knuckle_KNUCKLE_child")
+        );
     }
 }
