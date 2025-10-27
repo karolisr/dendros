@@ -11,3 +11,4 @@ submodules/*
 /benchmark_results/**/*.json
 /z_old
 /other
+/docs/**/*.html
