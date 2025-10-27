@@ -442,9 +442,9 @@ fn newick_string_recursive(child_nodes: Vec<&Node>, tree: &Tree) -> String {
 }
 
 /// Parses NEWICK formatted strings into [Tree] objects.
-pub fn parse_newick(s: String) -> Option<Vec<Tree>> {
+pub fn parse_newick(newick_string: String) -> Option<Vec<Tree>> {
     let mut trees: Vec<Tree> = Vec::new();
-    let s_filtered = filter_hash_style_comments(&s);
+    let s_filtered = filter_hash_style_comments(&newick_string);
     let tree_strings = split_multi_newick_string(&s_filtered);
 
     for tree_string in tree_strings {
@@ -466,14 +466,15 @@ fn parse_single_newick_tree(s: String) -> Option<Tree> {
 
     let mut tree = parse_newick_recursive(s_line_clean, None, Tree::default());
 
-    if tree.validate(true).is_err() {
-        return None;
+    let parse_result = tree.validate(true, false);
+    if parse_result.is_err() {
+        _ = parse_result.map_err(|x| println!("{x}"));
+        None
+    } else {
+        // Apply Rich NEWICK rooting preference, if specified.
+        apply_rooting_preference(&mut tree, rooting_preference);
+        Some(tree)
     }
-
-    // Apply Rich NEWICK rooting preference, if specified.
-    apply_rooting_preference(&mut tree, rooting_preference);
-
-    Some(tree)
 }
 
 fn parse_newick_recursive(
