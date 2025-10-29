@@ -1,17 +1,5 @@
-mod attribute;
-mod flatten;
-mod ltt;
-mod node;
-mod tree;
-
-pub type TreeFloat = f64;
-pub type TreeInt = i64;
-
-pub use attribute::{
-    Attribute, AttributeType, AttributeValue, AttributeValueType,
-};
-pub use flatten::Edge;
-use flatten::flatten_tree;
-pub use ltt::{LttPoint, ltt};
-pub use node::{Node, NodeId, NodeType};
-pub use tree::{Tree, TreeError};
+pub(crate) mod attribute;
+pub(crate) mod edges;
+pub(crate) mod ltt;
+pub(crate) mod node;
+pub(crate) mod tree;

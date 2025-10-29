@@ -12,20 +12,26 @@ use std::str::FromStr;
 // ATTRIBUTE MANAGEMENT TESTS
 // ============================================================================
 
-/// Helper function to create a simple tree with attributes for testing
+/// Helper function that creates a test tree structure for attribute testing.
+///
+/// **Input:** None
+/// **Output:** A `Tree` with root and two child nodes containing sample node and branch attributes
+/// **Rationale:** Provides a consistent baseline tree structure for attribute management tests
+///
+/// Creates a tree with:
+/// - Root node labeled "root"
+/// - Child1 node with support=0.95, age=100, rate=0.01, length=5
+/// - Child2 node with support=0.87, age=120, rate=0.02, length=7
 fn create_test_tree() -> Tree {
     let mut tree = Tree::new();
 
-    // Create root node
     let root_id = tree.add_new_node(Some("root"), None, None).unwrap();
 
-    // Create child nodes with attributes
     let child1_id =
         tree.add_new_node(Some("child1"), Some(1.0), Some(root_id)).unwrap();
     let child2_id =
         tree.add_new_node(Some("child2"), Some(2.0), Some(root_id)).unwrap();
 
-    // Add node attributes
     let mut node1_attrs = HashMap::new();
     let _ = node1_attrs.insert("support".to_string(), Attribute::Decimal(0.95));
     let _ = node1_attrs.insert("age".to_string(), Attribute::Integer(100));
@@ -40,7 +46,6 @@ fn create_test_tree() -> Tree {
         node.set_node_attributes(node2_attrs);
     }
 
-    // Add branch attributes
     let mut branch1_attrs = HashMap::new();
     let _ = branch1_attrs.insert("rate".to_string(), Attribute::Decimal(0.01));
     let _ = branch1_attrs.insert("length".to_string(), Attribute::Integer(5));
@@ -55,24 +60,28 @@ fn create_test_tree() -> Tree {
         node.set_branch_attributes(branch2_attrs);
     }
 
-    let _ = tree.validate(true).unwrap();
+    let _ = tree.validate(true, false).unwrap();
     tree
 }
 
+/// Tests successful renaming of node attribute keys across all nodes in a tree.
+///
+/// **Input:** Tree with nodes containing "support" attributes, new key name "bootstrap"
+/// **Output:** All "support" attributes renamed to "bootstrap" with values preserved
+/// **Rationale:** Ensures attribute key renaming works correctly and affects all nodes with that attribute
+///
+/// Verifies that the old key is removed, new key exists, and attribute values remain unchanged.
 #[test]
 fn test_rename_node_attribute_key_success() {
     let mut tree = create_test_tree();
 
-    // Rename "support" to "bootstrap"
     let count = tree.rename_node_attribute_key("support", "bootstrap").unwrap();
-    assert_eq!(count, 2); // Both child nodes had the "support" attribute
+    assert_eq!(count, 2);
 
-    // Verify the old key is gone and new key exists
     let keys = tree.node_attribute_keys();
     assert!(keys.contains(&"bootstrap".to_string()));
     assert!(!keys.contains(&"support".to_string()));
 
-    // Verify the values are preserved
     let child_ids = tree.node_ids_all();
     for child_id in child_ids {
         if let Some(node) = tree.node(Some(child_id)) {
@@ -95,21 +104,25 @@ fn test_rename_node_attribute_key_success() {
     }
 }
 
+/// Tests successful renaming of branch attribute keys across all nodes in a tree.
+///
+/// **Input:** Tree with nodes containing "rate" branch attributes, new key name "substitution_rate"
+/// **Output:** All "rate" branch attributes renamed to "substitution_rate" with values preserved
+/// **Rationale:** Ensures branch attribute key renaming works independently from node attributes
+///
+/// Verifies that branch attributes can be renamed separately from node attributes while preserving values.
 #[test]
 fn test_rename_branch_attribute_key_success() {
     let mut tree = create_test_tree();
 
-    // Rename "rate" to "substitution_rate"
     let count =
         tree.rename_branch_attribute_key("rate", "substitution_rate").unwrap();
-    assert_eq!(count, 2); // Both child nodes had the "rate" attribute
+    assert_eq!(count, 2);
 
-    // Verify the old key is gone and new key exists
     let keys = tree.branch_attribute_keys();
     assert!(keys.contains(&"substitution_rate".to_string()));
     assert!(!keys.contains(&"rate".to_string()));
 
-    // Verify the values are preserved
     let child_ids = tree.node_ids_all();
     for child_id in child_ids {
         if let Some(node) = tree.node(Some(child_id)) {
@@ -132,163 +145,209 @@ fn test_rename_branch_attribute_key_success() {
     }
 }
 
+/// Tests that renaming an attribute key to an existing key name produces an error.
+///
+/// **Input:** Tree with existing "support" and "age" attributes, attempt to rename "support" to "age"
+/// **Output:** Error of type `TreeError::AttributeKeyAlreadyExists`, no changes made to tree
+/// **Rationale:** Prevents attribute key conflicts that would cause data loss or confusion
+///
+/// Ensures the tree remains unchanged when attempting to create duplicate attribute keys.
 #[test]
 fn test_rename_to_existing_key_error() {
     let mut tree = create_test_tree();
 
-    // Try to rename "support" to "age" (which already exists)
     let result = tree.rename_node_attribute_key("support", "age");
     assert!(matches!(result, Err(TreeError::AttributeKeyAlreadyExists(_))));
 
-    // Verify no changes were made
     let keys = tree.node_attribute_keys();
     assert!(keys.contains(&"support".to_string()));
     assert!(keys.contains(&"age".to_string()));
 }
 
+/// Tests successful modification of an existing node attribute value.
+///
+/// **Input:** Tree with node containing "support" attribute (0.95), new value (0.99)
+/// **Output:** Node attribute "support" updated to new value (0.99)
+/// **Rationale:** Validates that individual node attribute values can be modified without affecting other attributes
+///
+/// Confirms that attribute value changes are applied correctly to the specified node.
 #[test]
 fn test_change_node_attribute_value_success() {
     let mut tree = create_test_tree();
 
-    // Find child1 node
     let child1_id = tree.node_id_by_label("child1").unwrap();
 
-    // Change support value from 0.95 to 0.99
     let new_value = Attribute::Decimal(0.99);
     tree.change_node_attribute_value(child1_id, "support", new_value).unwrap();
 
-    // Verify the change
     if let Some(node) = tree.node(Some(child1_id)) {
         let attrs = node.node_attributes();
         assert_eq!(attrs.get("support"), Some(&Attribute::Decimal(0.99)));
     }
 }
 
+/// Tests successful modification of an existing branch attribute value.
+///
+/// **Input:** Tree with node containing "rate" branch attribute (0.01), new value (0.015)
+/// **Output:** Branch attribute "rate" updated to new value (0.015)
+/// **Rationale:** Validates that branch attributes can be modified independently from node attributes
+///
+/// Confirms that branch attribute value changes are applied correctly without affecting node attributes.
 #[test]
 fn test_change_branch_attribute_value_success() {
     let mut tree = create_test_tree();
 
-    // Find child1 node
     let child1_id = tree.node_id_by_label("child1").unwrap();
 
-    // Change rate value from 0.01 to 0.015
     let new_value = Attribute::Decimal(0.015);
     tree.change_branch_attribute_value(child1_id, "rate", new_value).unwrap();
 
-    // Verify the change
     if let Some(node) = tree.node(Some(child1_id)) {
         let attrs = node.branch_attributes();
         assert_eq!(attrs.get("rate"), Some(&Attribute::Decimal(0.015)));
     }
 }
 
+/// Tests that integer attribute values can be successfully converted to decimal types.
+///
+/// **Input:** Tree with node containing "age" integer attribute (100), new decimal value (100.5)
+/// **Output:** Attribute value changed from Integer(100) to Decimal(100.5)
+/// **Rationale:** Ensures type coercion from integer to decimal is allowed for numerical compatibility
+///
+/// Validates that the type system allows widening numeric conversions from integer to decimal.
 #[test]
 fn test_change_attribute_value_integer_to_decimal_conversion() {
     let mut tree = create_test_tree();
 
-    // Find child1 node
     let child1_id = tree.node_id_by_label("child1").unwrap();
 
-    // Change age from Integer(100) to Decimal(100.5) - should be allowed
     let new_value = Attribute::Decimal(100.5);
     tree.change_node_attribute_value(child1_id, "age", new_value).unwrap();
 
-    // Verify the change (should be converted to Decimal)
     if let Some(node) = tree.node(Some(child1_id)) {
         let attrs = node.node_attributes();
         assert_eq!(attrs.get("age"), Some(&Attribute::Decimal(100.5)));
     }
 }
 
+/// Tests that incompatible type conversions are rejected with appropriate errors.
+///
+/// **Input:** Tree with node containing "support" decimal attribute (0.95), incompatible text value ("high")
+/// **Output:** Error of type `TreeError::AttributeTypeMismatch`, original value preserved
+/// **Rationale:** Prevents data corruption by rejecting incompatible type conversions
+///
+/// Ensures type safety by rejecting conversions between fundamentally incompatible types like decimal to text.
 #[test]
 fn test_change_attribute_value_incompatible_type_error() {
     let mut tree = create_test_tree();
 
-    // Find child1 node
     let child1_id = tree.node_id_by_label("child1").unwrap();
 
-    // Try to change support from Decimal to Text - should fail
     let new_value = Attribute::Text("high".to_string());
     let result =
         tree.change_node_attribute_value(child1_id, "support", new_value);
     assert!(matches!(result, Err(TreeError::AttributeTypeMismatch(_, _))));
 
-    // Verify no change was made
     if let Some(node) = tree.node(Some(child1_id)) {
         let attrs = node.node_attributes();
         assert_eq!(attrs.get("support"), Some(&Attribute::Decimal(0.95)));
     }
 }
 
+/// Tests that attempting to modify a non-existent attribute produces an error.
+///
+/// **Input:** Tree with node, attempt to modify non-existent attribute "nonexistent"
+/// **Output:** Error of type `TreeError::AttributeNotFound`
+/// **Rationale:** Prevents accidental creation of attributes through typos in attribute names
+///
+/// Ensures that attribute modifications only affect existing attributes, not create new ones.
 #[test]
 fn test_change_nonexistent_attribute_error() {
     let mut tree = create_test_tree();
 
-    // Find child1 node
     let child1_id = tree.node_id_by_label("child1").unwrap();
 
-    // Try to change a non-existent attribute
     let new_value = Attribute::Decimal(0.5);
     let result =
         tree.change_node_attribute_value(child1_id, "nonexistent", new_value);
     assert!(matches!(result, Err(TreeError::AttributeNotFound(_, _))));
 }
 
+/// Tests that attempting to modify attributes on a non-existent node produces an error.
+///
+/// **Input:** Tree, fake/invalid NodeId, attempt to modify "support" attribute
+/// **Output:** Error of type `TreeError::ParentNodeDoesNotExist`
+/// **Rationale:** Prevents operations on invalid node references that could cause undefined behavior
+///
+/// Ensures node existence is validated before attempting attribute modifications.
 #[test]
 fn test_change_attribute_nonexistent_node_error() {
     let mut tree = create_test_tree();
 
-    // Create a fake NodeId that doesn't exist
     let fake_node_id = NodeId::default();
 
-    // Try to change an attribute on non-existent node
     let new_value = Attribute::Decimal(0.5);
     let result =
         tree.change_node_attribute_value(fake_node_id, "support", new_value);
     assert!(matches!(result, Err(TreeError::ParentNodeDoesNotExist(_))));
 }
 
+/// Tests that renaming a non-existent attribute key succeeds but affects zero nodes.
+///
+/// **Input:** Tree with existing attributes, attempt to rename non-existent key "nonexistent" to "new_key"
+/// **Output:** Operation succeeds with count=0, no new keys created
+/// **Rationale:** Allows graceful handling of rename operations on attributes that may not exist
+///
+/// Ensures rename operations are idempotent and don't create spurious attribute keys.
 #[test]
 fn test_rename_nonexistent_attribute_key() {
     let mut tree = create_test_tree();
 
-    // Try to rename a non-existent attribute key
     let count =
         tree.rename_node_attribute_key("nonexistent", "new_key").unwrap();
-    assert_eq!(count, 0); // No nodes were affected
+    assert_eq!(count, 0);
 
-    // Verify no new key was created
     let keys = tree.node_attribute_keys();
     assert!(!keys.contains(&"new_key".to_string()));
 }
 
+/// Tests that changing one attribute value does not affect other attributes on the same node.
+///
+/// **Input:** Tree with node containing multiple attributes ("support", "age"), modify only "support"
+/// **Output:** "support" attribute changed, "age" attribute unchanged, total attribute count preserved
+/// **Rationale:** Ensures attribute modifications are isolated and don't cause side effects on other attributes
+///
+/// Validates that the attribute modification system maintains data integrity for unrelated attributes.
 #[test]
 fn test_change_attribute_value_preserves_other_attributes() {
     let mut tree = create_test_tree();
 
-    // Find child1 node
     let child1_id = tree.node_id_by_label("child1").unwrap();
 
-    // Change support value
     let new_value = Attribute::Decimal(0.99);
     tree.change_node_attribute_value(child1_id, "support", new_value).unwrap();
 
-    // Verify other attributes are preserved
     if let Some(node) = tree.node(Some(child1_id)) {
         let attrs = node.node_attributes();
         assert_eq!(attrs.get("age"), Some(&Attribute::Integer(100)));
-        assert_eq!(attrs.len(), 2); // Should still have both attributes
+        assert_eq!(attrs.len(), 2);
     }
 }
 
+/// Tests that list-type attribute values can be successfully modified.
+///
+/// **Input:** Tree with node, add list attribute containing color values, then modify the list
+/// **Output:** List attribute successfully changed from [#FF0000, #00FF00] to [#0000FF, #FFFF00]
+/// **Rationale:** Ensures complex attribute types like lists can be modified without data corruption
+///
+/// Validates that the attribute system properly handles composite data types like lists of colors.
 #[test]
 fn test_change_attribute_value_with_list_type() {
     let mut tree = create_test_tree();
 
-    // Add a list attribute to child1
     let child1_id = tree.node_id_by_label("child1").unwrap();
     if let Some(node) = tree.node(Some(child1_id)) {
-        let mut attrs = node.node_attributes();
+        let mut attrs = node.node_attributes().clone();
         let _ = attrs.insert(
             "colors".to_string(),
             Attribute::List(vec![
@@ -299,14 +358,12 @@ fn test_change_attribute_value_with_list_type() {
         tree.node_mut(Some(child1_id)).unwrap().set_node_attributes(attrs);
     }
 
-    // Change the list attribute
     let new_value = Attribute::List(vec![
         AttributeValue::Color("#0000FF".to_string()),
         AttributeValue::Color("#FFFF00".to_string()),
     ]);
     tree.change_node_attribute_value(child1_id, "colors", new_value).unwrap();
 
-    // Verify the change
     if let Some(node) = tree.node(Some(child1_id)) {
         let attrs = node.node_attributes();
         if let Some(Attribute::List(values)) = attrs.get("colors") {
@@ -323,17 +380,20 @@ fn test_change_attribute_value_with_list_type() {
 // ATTRIBUTE VALIDATION TESTS
 // ============================================================================
 
+/// Tests that mixed integer/decimal attributes are unified to decimal type during validation.
+///
+/// **Input:** Tree with two nodes having same attribute key "support" but different types (Integer(95), Decimal(97.5))
+/// **Output:** Both attributes converted to Decimal type with values preserved (95.0, 97.5)
+/// **Rationale:** Ensures type consistency across the tree by promoting integers to decimals when mixed
+///
+/// Validates that the type unification system allows compatible numeric conversions during tree validation.
 #[test]
 fn test_attribute_type_unification_integer_to_decimal() {
-    // Test that if one node has an integer attribute and another has a decimal
-    // for the same key, they both get converted to decimal type
     let mut tree = Tree::new();
 
-    // Add nodes with mixed integer/decimal attributes for the same key "support"
     let node1_id = tree.add_new_node(Some("A"), None, None).unwrap();
     let node2_id = tree.add_new_node(Some("B"), None, Some(node1_id)).unwrap();
 
-    // Set attributes - one integer, one decimal for same key
     let mut node1_attrs = HashMap::new();
     let _ = node1_attrs.insert("support".to_string(), Attribute::Integer(95));
 
@@ -343,11 +403,9 @@ fn test_attribute_type_unification_integer_to_decimal() {
     tree.node_mut(Some(node1_id)).unwrap().set_node_attributes(node1_attrs);
     tree.node_mut(Some(node2_id)).unwrap().set_node_attributes(node2_attrs);
 
-    // Validate the tree - should unify types
-    let result = tree.validate(false);
+    let result = tree.validate(false, false);
     assert!(result.is_ok(), "Tree validation should succeed");
 
-    // Check that both nodes now have Decimal attributes
     let node1_attrs = tree.node_attributes(node1_id);
     let node2_attrs = tree.node_attributes(node2_id);
     let node1_support = node1_attrs.get("support").unwrap();
@@ -362,15 +420,20 @@ fn test_attribute_type_unification_integer_to_decimal() {
     }
 }
 
+/// Tests that incompatible attribute types across nodes cause validation failure.
+///
+/// **Input:** Tree with nodes having same attribute key "value" but incompatible types (Text("high"), Integer(42))
+/// **Output:** Tree validation fails with `TreeError::InvalidTree` containing "Incompatible types" message
+/// **Rationale:** Prevents data corruption by rejecting trees with conflicting attribute type definitions
+///
+/// Ensures that fundamentally incompatible types like Text and Integer cannot coexist for the same attribute key.
 #[test]
 fn test_attribute_type_validation_incompatible_types() {
-    // Test that incompatible types (Text vs Integer) fail validation
     let mut tree = Tree::new();
 
     let node1_id = tree.add_new_node(Some("A"), None, None).unwrap();
     let node2_id = tree.add_new_node(Some("B"), None, Some(node1_id)).unwrap();
 
-    // Set incompatible attribute types for the same key
     let mut node1_attrs = HashMap::new();
     let _ = node1_attrs
         .insert("value".to_string(), Attribute::Text("high".to_string()));
@@ -381,8 +444,7 @@ fn test_attribute_type_validation_incompatible_types() {
     tree.node_mut(Some(node1_id)).unwrap().set_node_attributes(node1_attrs);
     tree.node_mut(Some(node2_id)).unwrap().set_node_attributes(node2_attrs);
 
-    // Validate the tree - should fail
-    let result = tree.validate(false);
+    let result = tree.validate(false, false);
     assert!(
         result.is_err(),
         "Tree validation should fail for incompatible types"
@@ -399,15 +461,20 @@ fn test_attribute_type_validation_incompatible_types() {
     }
 }
 
+/// Tests that list attributes with compatible element types can be unified during validation.
+///
+/// **Input:** Tree with nodes having "coords" list attributes containing mixed Integer/Decimal elements
+/// **Output:** Both lists unified to contain only Decimal elements, validation succeeds
+/// **Rationale:** Ensures list attributes follow same type unification rules as scalar attributes
+///
+/// Validates that integer elements in lists are promoted to decimals when lists contain mixed numeric types.
 #[test]
 fn test_list_attribute_type_validation() {
-    // Test that list attributes with same structure can be unified
     let mut tree = Tree::new();
 
     let node1_id = tree.add_new_node(Some("A"), None, None).unwrap();
     let node2_id = tree.add_new_node(Some("B"), None, Some(node1_id)).unwrap();
 
-    // Set list attributes with compatible types (integer list -> decimal list)
     let mut node1_attrs = HashMap::new();
     let _ = node1_attrs.insert(
         "coords".to_string(),
@@ -431,14 +498,12 @@ fn test_list_attribute_type_validation() {
     tree.node_mut(Some(node1_id)).unwrap().set_node_attributes(node1_attrs);
     tree.node_mut(Some(node2_id)).unwrap().set_node_attributes(node2_attrs);
 
-    // Validate should succeed and unify to all decimals
-    let result = tree.validate(false);
+    let result = tree.validate(false, false);
     assert!(
         result.is_ok(),
         "Tree validation should succeed for compatible list types"
     );
 
-    // Check that first node's list was converted to decimals
     let node1_attrs = tree.node_attributes(node1_id);
     let node1_coords = node1_attrs.get("coords").unwrap();
     if let Attribute::List(values) = node1_coords {
@@ -451,9 +516,15 @@ fn test_list_attribute_type_validation() {
     }
 }
 
+/// Tests that list attributes with different lengths cause validation failure.
+///
+/// **Input:** Tree with nodes having "data" list attributes of different lengths (2 vs 3 elements)
+/// **Output:** Tree validation fails with error
+/// **Rationale:** Ensures structural consistency of list attributes across all nodes
+///
+/// Validates that list attributes must have identical lengths across all nodes for the same attribute key.
 #[test]
 fn test_list_attribute_incompatible_lengths() {
-    // Test that lists with different lengths fail validation
     let mut tree = Tree::new();
 
     let node1_id = tree.add_new_node(Some("A"), None, None).unwrap();
@@ -474,29 +545,34 @@ fn test_list_attribute_incompatible_lengths() {
         Attribute::List(vec![
             AttributeValue::Integer(1),
             AttributeValue::Integer(2),
-            AttributeValue::Integer(3), // Different length
+            AttributeValue::Integer(3),
         ]),
     );
 
     tree.node_mut(Some(node1_id)).unwrap().set_node_attributes(node1_attrs);
     tree.node_mut(Some(node2_id)).unwrap().set_node_attributes(node2_attrs);
 
-    let result = tree.validate(false);
+    let result = tree.validate(false, false);
     assert!(
         result.is_err(),
         "Tree validation should fail for lists of different lengths"
     );
 }
 
+/// Tests that branch attributes are validated independently from node attributes.
+///
+/// **Input:** Tree with nodes having mixed Integer/Decimal "length" branch attributes
+/// **Output:** Both branch attributes unified to Decimal type, validation succeeds
+/// **Rationale:** Ensures branch and node attributes are managed separately with independent type systems
+///
+/// Validates that branch attribute type unification works the same as node attributes but operates independently.
 #[test]
 fn test_branch_attribute_validation() {
-    // Test that branch attributes are validated separately from node attributes
     let mut tree = Tree::new();
 
     let node1_id = tree.add_new_node(Some("A"), None, None).unwrap();
     let node2_id = tree.add_new_node(Some("B"), None, Some(node1_id)).unwrap();
 
-    // Set branch attributes with compatible types
     let mut node1_branch_attrs = HashMap::new();
     let _ = node1_branch_attrs
         .insert("length".to_string(), Attribute::Integer(100));
@@ -512,13 +588,12 @@ fn test_branch_attribute_validation() {
         .unwrap()
         .set_branch_attributes(node2_branch_attrs);
 
-    let result = tree.validate(false);
+    let result = tree.validate(false, false);
     assert!(
         result.is_ok(),
         "Tree validation should succeed for compatible branch attribute types"
     );
 
-    // Check that both branch attributes are now decimals
     let node1_branch_attrs = tree.branch_attributes(node1_id);
     let node2_branch_attrs = tree.branch_attributes(node2_id);
     let node1_length = node1_branch_attrs.get("length").unwrap();
@@ -528,9 +603,15 @@ fn test_branch_attribute_validation() {
     assert!(matches!(node2_length, Attribute::Decimal(_)));
 }
 
+/// Tests that square bracket list syntax [item1,item2,...] is correctly parsed into list attributes.
+///
+/// **Input:** String "[1,2.5,hello]" parsed as Attribute
+/// **Output:** Attribute::List with three elements: Integer(1), Decimal(2.5), Text("hello")
+/// **Rationale:** Validates support for modern list syntax in attribute parsing
+///
+/// Ensures the parser correctly identifies and converts mixed-type lists from string representations.
 #[test]
 fn test_attribute_parsing_from_string_list_syntax() {
-    // Test that the new list syntax [item1,item2,...] is parsed correctly
     use std::str::FromStr;
 
     let list_attr = Attribute::from_str("[1,2.5,hello]").unwrap();
@@ -549,9 +630,15 @@ fn test_attribute_parsing_from_string_list_syntax() {
     }
 }
 
+/// Tests that legacy curly brace range syntax {a,b} is converted to modern list format.
+///
+/// **Input:** String "{1.5,2.5}" parsed as Attribute
+/// **Output:** Attribute::List with two Decimal elements: 1.5, 2.5
+/// **Rationale:** Maintains backward compatibility with older attribute syntax formats
+///
+/// Ensures legacy range syntax is automatically converted to the standardized list representation.
 #[test]
 fn test_range_syntax_converted_to_list() {
-    // Test that old range syntax {a,b} is converted to list format
     use std::str::FromStr;
 
     let range_attr = Attribute::from_str("{1.5,2.5}").unwrap();
@@ -569,9 +656,15 @@ fn test_range_syntax_converted_to_list() {
     }
 }
 
+/// Tests that all attribute types format correctly when converted to strings.
+///
+/// **Input:** Various Attribute types: Text, Integer, Decimal, and mixed List
+/// **Output:** Proper string representations: "hello", "42", "3.15", "[a,1,2.5]"
+/// **Rationale:** Ensures consistent string formatting for attribute values across different types
+///
+/// Validates that the Display trait implementations produce expected formatted output for all attribute types.
 #[test]
 fn test_attribute_display_formatting() {
-    // Test that the new attribute types display correctly
     let text_attr = Attribute::Text("hello".to_string());
     let int_attr = Attribute::Integer(42);
     let decimal_attr = Attribute::Decimal(3.15);
@@ -587,9 +680,15 @@ fn test_attribute_display_formatting() {
     assert_eq!(format!("{}", list_attr), "[a,1,2.5]");
 }
 
+/// Tests that empty list attributes are correctly parsed and formatted.
+///
+/// **Input:** String "[]" parsed as Attribute
+/// **Output:** Attribute::List with empty vector, formats back to "[]"
+/// **Rationale:** Ensures edge case of empty lists is handled properly in parsing and formatting
+///
+/// Validates that empty lists maintain proper identity through parse-format cycles.
 #[test]
 fn test_empty_list_handling() {
-    // Test that empty lists are handled correctly
     use std::str::FromStr;
 
     let empty_list = Attribute::from_str("[]").unwrap();
@@ -603,17 +702,21 @@ fn test_empty_list_handling() {
     assert_eq!(format!("{}", empty_list), "[]");
 }
 
+/// Tests attribute validation on a more complex tree with multiple attribute types.
+///
+/// **Input:** Parsed Newick tree with manually added mixed-type attributes (Integer/Decimal "support", Text "method")
+/// **Output:** Tree validation succeeds, Integer support values unified to Decimal type
+/// **Rationale:** Validates that the attribute system works correctly on realistic parsed trees
+///
+/// Ensures complex scenarios with multiple attribute keys and mixed types are handled properly.
 #[test]
 fn test_complex_tree_attribute_validation() {
-    // Test a more complex scenario with multiple attribute keys and mixed types
     let newick_str = "((A:0.1,B:0.2):0.3,C:0.4);";
     let trees = parse_newick(newick_str.to_string()).unwrap();
     let mut tree = trees.into_iter().next().unwrap();
 
-    // Manually set various attributes on different nodes
     let tip_ids = tree.tip_node_ids_all();
 
-    // Set mixed types for "support" - should unify to Decimal
     let mut node1_attrs = HashMap::new();
     let _ = node1_attrs.insert("support".to_string(), Attribute::Integer(95));
     let _ = node1_attrs
@@ -627,10 +730,9 @@ fn test_complex_tree_attribute_validation() {
     tree.node_mut(Some(tip_ids[0])).unwrap().set_node_attributes(node1_attrs);
     tree.node_mut(Some(tip_ids[1])).unwrap().set_node_attributes(node2_attrs);
 
-    let result = tree.validate(true);
+    let result = tree.validate(true, false);
     assert!(result.is_ok(), "Complex tree validation should succeed");
 
-    // Verify unification worked
     let attrs1 = tree.node_attributes(tip_ids[0]);
     let attrs2 = tree.node_attributes(tip_ids[1]);
     let attr1 = attrs1.get("support").unwrap();
@@ -644,6 +746,13 @@ fn test_complex_tree_attribute_validation() {
 // COLOR ATTRIBUTE TESTS
 // ============================================================================
 
+/// Tests that lowercase hexadecimal color values are correctly parsed and normalized.
+///
+/// **Input:** String "#ff3333" parsed as Attribute
+/// **Output:** Attribute::Color with normalized uppercase value "#FF3333"
+/// **Rationale:** Ensures color parsing handles case-insensitive input with consistent output format
+///
+/// Validates that lowercase hex colors are recognized and converted to standard uppercase format.
 #[test]
 fn test_hex_color_parsing_lowercase() {
     let color_str = "#ff3333";
@@ -656,6 +765,13 @@ fn test_hex_color_parsing_lowercase() {
     }
 }
 
+/// Tests that uppercase hexadecimal color values are correctly parsed and preserved.
+///
+/// **Input:** String "#FF3333" parsed as Attribute
+/// **Output:** Attribute::Color with same uppercase value "#FF3333"
+/// **Rationale:** Ensures uppercase hex colors are correctly recognized as color attributes
+///
+/// Validates that already-uppercase hex colors are properly handled by the parser.
 #[test]
 fn test_hex_color_parsing_uppercase() {
     let color_str = "#FF3333";
@@ -668,6 +784,13 @@ fn test_hex_color_parsing_uppercase() {
     }
 }
 
+/// Tests that mixed-case hexadecimal color values are correctly parsed and normalized.
+///
+/// **Input:** String "#Ff33Aa" parsed as Attribute
+/// **Output:** Attribute::Color with normalized uppercase value "#FF33AA"
+/// **Rationale:** Ensures color parsing normalizes mixed-case input to consistent uppercase format
+///
+/// Validates that mixed-case hex colors are recognized and properly converted to standard format.
 #[test]
 fn test_hex_color_parsing_mixed_case() {
     let color_str = "#Ff33Aa";
@@ -680,6 +803,13 @@ fn test_hex_color_parsing_mixed_case() {
     }
 }
 
+/// Tests that hexadecimal colors containing only numeric digits are correctly parsed.
+///
+/// **Input:** String "#123456" parsed as Attribute
+/// **Output:** Attribute::Color with value "#123456"
+/// **Rationale:** Ensures numeric-only hex colors are recognized as valid color attributes
+///
+/// Validates that hex colors composed entirely of digits (0-9) are properly handled.
 #[test]
 fn test_hex_color_all_digits() {
     let color_str = "#123456";
@@ -692,6 +822,13 @@ fn test_hex_color_all_digits() {
     }
 }
 
+/// Tests that hexadecimal colors containing only letter digits are correctly parsed and normalized.
+///
+/// **Input:** String "#abcdef" parsed as Attribute
+/// **Output:** Attribute::Color with normalized uppercase value "#ABCDEF"
+/// **Rationale:** Ensures letter-only hex colors are recognized and properly case-normalized
+///
+/// Validates that hex colors composed entirely of hex letters (a-f) are handled correctly.
 #[test]
 fn test_hex_color_all_letters() {
     let color_str = "#abcdef";
@@ -704,12 +841,18 @@ fn test_hex_color_all_letters() {
     }
 }
 
+/// Tests that invalid hexadecimal colors with incorrect length are parsed as text attributes.
+///
+/// **Input:** String "#ff33" (too short) parsed as Attribute
+/// **Output:** Attribute::Text with value "#ff33"
+/// **Rationale:** Ensures malformed color strings fall back to text parsing instead of causing errors
+///
+/// Validates that invalid hex colors are gracefully handled as text rather than rejected.
 #[test]
 fn test_invalid_hex_color_wrong_length() {
-    let color_str = "#ff33"; // Too short
+    let color_str = "#ff33";
     let attribute = Attribute::from_str(color_str).unwrap();
 
-    // Should be parsed as Text, not Color
     if let Attribute::Text(text) = attribute {
         assert_eq!(text, "#ff33");
     } else {
@@ -717,12 +860,18 @@ fn test_invalid_hex_color_wrong_length() {
     }
 }
 
+/// Tests that color strings missing the hash prefix are parsed as text attributes.
+///
+/// **Input:** String "ff3333" (missing #) parsed as Attribute
+/// **Output:** Attribute::Text with value "ff3333"
+/// **Rationale:** Ensures color parsing requires proper hash prefix, fallback to text for invalid format
+///
+/// Validates that hex strings without # are treated as text rather than colors.
 #[test]
 fn test_invalid_hex_color_no_hash() {
-    let color_str = "ff3333"; // Missing #
+    let color_str = "ff3333";
     let attribute = Attribute::from_str(color_str).unwrap();
 
-    // Should be parsed as Text, not Color
     if let Attribute::Text(text) = attribute {
         assert_eq!(text, "ff3333");
     } else {
@@ -730,12 +879,18 @@ fn test_invalid_hex_color_no_hash() {
     }
 }
 
+/// Tests that color strings with invalid hexadecimal characters are parsed as text attributes.
+///
+/// **Input:** String "#gg3333" (invalid 'g' character) parsed as Attribute
+/// **Output:** Attribute::Text with value "#gg3333"
+/// **Rationale:** Ensures only valid hex characters (0-9, a-f) are accepted for color parsing
+///
+/// Validates that invalid hex characters cause graceful fallback to text parsing.
 #[test]
 fn test_invalid_hex_color_invalid_characters() {
-    let color_str = "#gg3333"; // 'g' is not a hex digit
+    let color_str = "#gg3333";
     let attribute = Attribute::from_str(color_str).unwrap();
 
-    // Should be parsed as Text, not Color
     if let Attribute::Text(text) = attribute {
         assert_eq!(text, "#gg3333");
     } else {
@@ -743,6 +898,13 @@ fn test_invalid_hex_color_invalid_characters() {
     }
 }
 
+/// Tests that color attributes correctly report their type as AttributeType::Color.
+///
+/// **Input:** Valid color string "#ff3333" parsed as Attribute
+/// **Output:** get_type() returns AttributeType::Color
+/// **Rationale:** Ensures type system correctly identifies color attributes for validation and processing
+///
+/// Validates that color attributes have the proper type metadata for the attribute system.
 #[test]
 fn test_color_attribute_type() {
     let color_str = "#ff3333";
@@ -751,6 +913,13 @@ fn test_color_attribute_type() {
     assert_eq!(attribute.get_type(), AttributeType::Color);
 }
 
+/// Tests that color attributes format correctly using the Display trait.
+///
+/// **Input:** Color attribute created from "#ff3333"
+/// **Output:** Display format produces "#FF3333" (normalized uppercase)
+/// **Rationale:** Ensures consistent string representation of color attributes for output
+///
+/// Validates that color formatting maintains normalized uppercase hex representation.
 #[test]
 fn test_color_attribute_display() {
     let color_str = "#ff3333";
@@ -759,6 +928,13 @@ fn test_color_attribute_display() {
     assert_eq!(format!("{}", attribute), "#FF3333");
 }
 
+/// Tests that color attributes format correctly using the Debug trait.
+///
+/// **Input:** Color attribute created from "#ff3333"
+/// **Output:** Debug format produces "Color(\"#FF3333\")"
+/// **Rationale:** Ensures proper debug output for color attributes during development and testing
+///
+/// Validates that debug formatting clearly identifies color attributes with their normalized values.
 #[test]
 fn test_color_attribute_debug() {
     let color_str = "#ff3333";
@@ -767,6 +943,13 @@ fn test_color_attribute_debug() {
     assert_eq!(format!("{:?}", attribute), "Color(\"#FF3333\")");
 }
 
+/// Tests that color attributes can be created directly from owned String values.
+///
+/// **Input:** String "#abc123" converted to Attribute using From trait
+/// **Output:** Attribute::Color with normalized value "#ABC123"
+/// **Rationale:** Ensures the From trait provides convenient color attribute creation from strings
+///
+/// Validates that String-to-Attribute conversion properly handles color parsing and normalization.
 #[test]
 fn test_color_from_string() {
     let color_string = String::from("#abc123");
@@ -779,6 +962,13 @@ fn test_color_from_string() {
     }
 }
 
+/// Tests that color attributes can be created directly from string references.
+///
+/// **Input:** String reference "#def456" converted to Attribute using From trait
+/// **Output:** Attribute::Color with normalized value "#DEF456"
+/// **Rationale:** Ensures the From trait supports both owned strings and string references
+///
+/// Validates that &str-to-Attribute conversion properly handles color parsing and normalization.
 #[test]
 fn test_color_from_str_reference() {
     let color_str = "#def456";
@@ -791,6 +981,13 @@ fn test_color_from_str_reference() {
     }
 }
 
+/// Tests that color attributes correctly implement equality comparison.
+///
+/// **Input:** Three color attributes: two identical (#FF3333) and one different (#FF3334)
+/// **Output:** Identical colors compare equal, different colors compare unequal
+/// **Rationale:** Ensures color attributes support proper equality testing for validation and comparison
+///
+/// Validates that the PartialEq trait works correctly for color attribute values.
 #[test]
 fn test_color_equality() {
     let attr1 = Attribute::Color("#FF3333".to_string());
@@ -801,6 +998,13 @@ fn test_color_equality() {
     assert_ne!(attr1, attr3);
 }
 
+/// Tests that color attributes can be properly cloned.
+///
+/// **Input:** Original color attribute with value "#FF3333"
+/// **Output:** Cloned attribute that equals the original
+/// **Rationale:** Ensures color attributes support cloning for copying and manipulation operations
+///
+/// Validates that the Clone trait produces identical copies of color attributes.
 #[test]
 fn test_color_clone() {
     let original = Attribute::Color("#FF3333".to_string());
@@ -813,9 +1017,15 @@ fn test_color_clone() {
 // FORMAT COMPATIBILITY TESTS
 // ============================================================================
 
+/// Tests parsing of BEAST-format individual node attributes in Newick trees.
+///
+/// **Input:** BEAST Newick string with [&attribute=value] syntax
+/// **Output:** Parsed tree with correct attribute values (height=100.0, rate=1.5, posterior=0.95)
+/// **Rationale:** Ensures compatibility with BEAST phylogenetic software output format
+///
+/// Validates that BEAST-style individual attributes are correctly parsed and typed as decimals.
 #[test]
 fn test_attribute_format_compatibility() {
-    // Test BEAST individual attributes
     let beast_simple =
         "(A[&height=100.0,rate=1.5]:0.1,B[&posterior=0.95]:0.2);";
     let trees = parse_newick(beast_simple.to_string())
@@ -841,9 +1051,15 @@ fn test_attribute_format_compatibility() {
     ));
 }
 
+/// Tests parsing of BEAST-format list attributes using curly brace syntax.
+///
+/// **Input:** BEAST Newick string with {value1,value2,...} list syntax for color specification
+/// **Output:** Parsed tree with List attribute containing mixed Integer/Decimal values [0,8.0,1,12.0,0]
+/// **Rationale:** Ensures compatibility with BEAST color/annotation list format
+///
+/// Validates that BEAST-style curly brace lists are correctly parsed as List attributes.
 #[test]
 fn test_beast_list_attributes() {
-    // Test BEAST list attributes (color specification)
     let beast_list = "(A[&colour={0,8.0,1,12.0,0}]:0.1,B);";
     let trees =
         parse_newick(beast_list.to_string()).expect("Should parse BEAST list");
@@ -864,9 +1080,15 @@ fn test_beast_list_attributes() {
     }
 }
 
+/// Tests parsing of IQ-TREE format list attributes with mixed types and colors.
+///
+/// **Input:** IQ-TREE Newick string with !hilight and !collapse attributes containing mixed types
+/// **Output:** Parsed tree with List attributes containing Integer, Decimal, Color, and Text values
+/// **Rationale:** Ensures compatibility with IQ-TREE software annotation format including color highlighting
+///
+/// Validates that IQ-TREE-style exclamation-prefixed attributes with mixed types are correctly parsed.
 #[test]
 fn test_iqtree_list_attributes() {
-    // Test IQ-TREE list attributes
     let iqtree = "(A[&!hilight={8,0.188,#ff3333}]:0.1,B[&!collapse={collapsed,0.188}]:0.2);";
     let trees = parse_newick(iqtree.to_string()).expect("Should parse IQ-TREE");
     let tree = &trees[0];
@@ -898,9 +1120,15 @@ fn test_iqtree_list_attributes() {
     }
 }
 
+/// Tests parsing of trees with mixed BEAST and IQ-TREE attribute formats.
+///
+/// **Input:** Newick string combining BEAST individual attributes and IQ-TREE list attributes
+/// **Output:** Parsed tree with both scalar (height=100.0) and list attributes correctly handled
+/// **Rationale:** Ensures parser can handle files mixing different phylogenetic software annotation styles
+///
+/// Validates interoperability between different attribute format conventions in a single tree.
 #[test]
 fn test_mixed_format_compatibility() {
-    // Test tree with both BEAST-style individual and list attributes
     let mixed =
         "(A[&height=100.0,colour={1,0.5,2}]:0.1,B[&!hilight={8,#ff3333}]:0.2);";
     let trees =
@@ -910,13 +1138,11 @@ fn test_mixed_format_compatibility() {
     let node_a_attrs = tree.node_attributes(tree.tip_node_ids_all()[0]);
     assert_eq!(node_a_attrs.len(), 2);
 
-    // Individual attribute
     assert!(matches!(
         node_a_attrs.get("height"),
         Some(dendros::Attribute::Decimal(100.0))
     ));
 
-    // List attribute
     if let Some(dendros::Attribute::List(values)) = node_a_attrs.get("colour") {
         assert_eq!(values.len(), 3);
         assert!(matches!(values[0], dendros::AttributeValue::Integer(1)));
@@ -939,9 +1165,15 @@ fn test_mixed_format_compatibility() {
     }
 }
 
+/// Tests parsing of empty list attributes using both bracket syntaxes.
+///
+/// **Input:** Newick string with empty curly brace {} and square bracket [] lists
+/// **Output:** Parsed tree with empty List attributes (length 0)
+/// **Rationale:** Ensures empty lists are handled correctly without parsing errors
+///
+/// Validates that both empty list syntaxes produce valid but empty List attributes.
 #[test]
 fn test_empty_list_attributes() {
-    // Test that empty lists are handled correctly
     let empty_list = "(A[&tags={}]:0.1,B[&values=[]]:0.2);";
     let trees =
         parse_newick(empty_list.to_string()).expect("Should parse empty lists");
@@ -966,9 +1198,15 @@ fn test_empty_list_attributes() {
     }
 }
 
+/// Tests parsing of quoted strings within list attributes.
+///
+/// **Input:** Newick string with lists containing double and single-quoted text values
+/// **Output:** Parsed tree with List attributes containing correctly unquoted Text values
+/// **Rationale:** Ensures quoted strings in lists are properly parsed and unquoted
+///
+/// Validates that both double and single quote styles work within list contexts.
 #[test]
 fn test_quoted_strings_in_lists() {
-    // Test that quoted strings within lists are handled correctly
     let quoted = r#"(A[&labels={"species A","population 1"}]:0.1,B[&tags={'tag1','tag2'}]:0.2);"#;
     let trees =
         parse_newick(quoted.to_string()).expect("Should parse quoted strings");
@@ -988,9 +1226,15 @@ fn test_quoted_strings_in_lists() {
     }
 }
 
+/// Tests parsing of single-item lists to ensure they remain as lists, not scalar values.
+///
+/// **Input:** Newick string with single-element lists {42} and {text}
+/// **Output:** Parsed tree with List attributes containing single elements, not scalar attributes
+/// **Rationale:** Ensures list syntax always produces List attributes regardless of element count
+///
+/// Validates that single-item lists maintain their list type rather than being converted to scalars.
 #[test]
 fn test_single_item_lists() {
-    // Test that single-item lists don't get confused with scalar values
     let single = "(A[&value={42}]:0.1,B[&name={text}]:0.2);";
     let trees = parse_newick(single.to_string())
         .expect("Should parse single-item lists");
@@ -1015,9 +1259,15 @@ fn test_single_item_lists() {
     }
 }
 
+/// Tests parsing of special characters within attribute values including hex colors and paths.
+///
+/// **Input:** Newick string with list containing hex color and file path with special characters
+/// **Output:** Parsed tree with Color value #FF0000 and Text value /usr/local/bin preserved
+/// **Rationale:** Ensures special characters like # and / are handled correctly in attribute values
+///
+/// Validates that various special character patterns are preserved during parsing.
 #[test]
 fn test_special_characters_in_values() {
-    // Test that special characters in values are preserved
     let special = r#"(A[&color={#ff0000}]:0.1,B[&path={/usr/local/bin}]:0.2);"#;
     let trees = parse_newick(special.to_string())
         .expect("Should parse special characters");
@@ -1042,9 +1292,15 @@ fn test_special_characters_in_values() {
     }
 }
 
+/// Tests parsing of negative numbers in both scalar and list attribute contexts.
+///
+/// **Input:** Newick string with negative decimal (-5.5) and list containing negative values {-1,-2.5,3}
+/// **Output:** Parsed tree with correct negative Decimal and Integer values preserved
+/// **Rationale:** Ensures negative number parsing works correctly in all attribute contexts
+///
+/// Validates that negative signs are properly handled in numeric attribute values.
 #[test]
 fn test_negative_numbers() {
-    // Test that negative numbers are parsed correctly
     let negative = "(A[&temp=-5.5]:0.1,B[&delta={-1,-2.5,3}]:0.2);";
     let trees = parse_newick(negative.to_string())
         .expect("Should parse negative numbers");
@@ -1069,9 +1325,15 @@ fn test_negative_numbers() {
     }
 }
 
+/// Tests parsing of scientific notation in both scalar and list attribute contexts.
+///
+/// **Input:** Newick string with scientific notation values (1.5e-10, 1e-5, 2.5E-3)
+/// **Output:** Parsed tree with correctly converted Decimal values maintaining precision
+/// **Rationale:** Ensures scientific notation is properly recognized and converted to standard decimal format
+///
+/// Validates that both lowercase 'e' and uppercase 'E' scientific notation work correctly.
 #[test]
 fn test_scientific_notation() {
-    // Test that scientific notation is parsed correctly
     let scientific = "(A[&prob=1.5e-10]:0.1,B[&values={1e-5,2.5E-3}]:0.2);";
     let trees = parse_newick(scientific.to_string())
         .expect("Should parse scientific notation");
@@ -1109,6 +1371,13 @@ fn test_scientific_notation() {
 // HEX COLORS IN LISTS TESTS
 // ============================================================================
 
+/// Tests parsing of hex colors within square bracket list syntax.
+///
+/// **Input:** Square bracket list string "[1, #ff3333, 2.5]" parsed as Attribute
+/// **Output:** List attribute with Integer(1), Color("#FF3333"), Decimal(2.5)
+/// **Rationale:** Ensures hex color recognition works within modern square bracket list syntax
+///
+/// Validates that colors are properly detected and normalized to uppercase within lists.
 #[test]
 fn test_hex_colors_in_square_bracket_lists() {
     let list_str = "[1, #ff3333, 2.5]";
@@ -1117,15 +1386,12 @@ fn test_hex_colors_in_square_bracket_lists() {
     if let Attribute::List(values) = attribute {
         assert_eq!(values.len(), 3);
 
-        // First item should be Integer
         assert!(matches!(values[0], AttributeValue::Integer(1)));
 
-        // Second item should be Color (uppercase)
         assert!(
             matches!(values[1], AttributeValue::Color(ref s) if s == "#FF3333")
         );
 
-        // Third item should be Decimal
         assert!(matches!(values[2], AttributeValue::Decimal(d) if d == 2.5));
 
         println!("Square bracket list: {:?}", values);
@@ -1134,6 +1400,13 @@ fn test_hex_colors_in_square_bracket_lists() {
     }
 }
 
+/// Tests parsing of hex colors within curly brace list syntax.
+///
+/// **Input:** Curly brace list string "{8, 0.188, #ff3333}" parsed as Attribute
+/// **Output:** List attribute with Integer(8), Decimal(0.188), Color("#FF3333")
+/// **Rationale:** Ensures hex color recognition works within legacy curly brace list syntax
+///
+/// Validates that colors are properly detected and normalized within BEAST-style lists.
 #[test]
 fn test_hex_colors_in_curly_brace_lists() {
     let list_str = "{8, 0.188, #ff3333}";
@@ -1142,15 +1415,12 @@ fn test_hex_colors_in_curly_brace_lists() {
     if let Attribute::List(values) = attribute {
         assert_eq!(values.len(), 3);
 
-        // First item should be Integer
         assert!(matches!(values[0], AttributeValue::Integer(8)));
 
-        // Second item should be Decimal
         assert!(
             matches!(values[1], AttributeValue::Decimal(d) if (d - 0.188).abs() < f64::EPSILON)
         );
 
-        // Third item should be Color (uppercase)
         assert!(
             matches!(values[2], AttributeValue::Color(ref s) if s == "#FF3333")
         );
@@ -1161,6 +1431,13 @@ fn test_hex_colors_in_curly_brace_lists() {
     }
 }
 
+/// Tests parsing of lists containing multiple hex color values.
+///
+/// **Input:** Square bracket list with three hex colors "[#ff0000, #00ff00, #0000ff]"
+/// **Output:** List attribute with three Color values normalized to uppercase
+/// **Rationale:** Ensures color-only lists are correctly parsed and all values recognized as colors
+///
+/// Validates that lists can contain homogeneous color data for visualization purposes.
 #[test]
 fn test_multiple_hex_colors_in_list() {
     let list_str = "[#ff0000, #00ff00, #0000ff]";
@@ -1169,7 +1446,6 @@ fn test_multiple_hex_colors_in_list() {
     if let Attribute::List(values) = attribute {
         assert_eq!(values.len(), 3);
 
-        // All items should be Colors (uppercase)
         assert!(
             matches!(values[0], AttributeValue::Color(ref s) if s == "#FF0000")
         );
@@ -1186,6 +1462,13 @@ fn test_multiple_hex_colors_in_list() {
     }
 }
 
+/// Tests parsing of hex colors with mixed case letters in lists.
+///
+/// **Input:** Curly brace list with mixed-case hex colors "{#AbCdEf, #123ABC, #def456}"
+/// **Output:** List attribute with all Color values normalized to uppercase
+/// **Rationale:** Ensures case-insensitive color parsing with consistent uppercase normalization
+///
+/// Validates that hex color case normalization works correctly within list contexts.
 #[test]
 fn test_mixed_case_hex_colors_in_list() {
     let list_str = "{#AbCdEf, #123ABC, #def456}";
@@ -1194,7 +1477,6 @@ fn test_mixed_case_hex_colors_in_list() {
     if let Attribute::List(values) = attribute {
         assert_eq!(values.len(), 3);
 
-        // All items should be Colors, normalized to uppercase
         assert!(
             matches!(values[0], AttributeValue::Color(ref s) if s == "#ABCDEF")
         );
@@ -1211,24 +1493,30 @@ fn test_mixed_case_hex_colors_in_list() {
     }
 }
 
+/// Tests that invalid hex color patterns remain as text values in lists.
+///
+/// **Input:** List with invalid hex patterns "[#ff333, #gg3333, ff3333]" (wrong length, invalid char, no hash)
+/// **Output:** List attribute with all values as Text (no Color conversion)
+/// **Rationale:** Ensures invalid color formats gracefully fall back to text parsing
+///
+/// Validates that color validation is strict and invalid patterns don't cause parsing errors.
 #[test]
 fn test_invalid_hex_colors_remain_text_in_list() {
-    let list_str = "[#ff333, #gg3333, ff3333]"; // Invalid hex patterns
+    let list_str = "[#ff333, #gg3333, ff3333]";
     let attribute = Attribute::from_str(list_str).unwrap();
 
     if let Attribute::List(values) = attribute {
         assert_eq!(values.len(), 3);
 
-        // All should remain as Text since they're invalid hex patterns
         assert!(
             matches!(values[0], AttributeValue::Text(ref s) if s == "#ff333")
-        ); // Too short
+        );
         assert!(
             matches!(values[1], AttributeValue::Text(ref s) if s == "#gg3333")
-        ); // Invalid char
+        );
         assert!(
             matches!(values[2], AttributeValue::Text(ref s) if s == "ff3333")
-        ); // No hash
+        );
 
         println!("Invalid hex patterns remain as text: {:?}", values);
     } else {
@@ -1236,6 +1524,13 @@ fn test_invalid_hex_colors_remain_text_in_list() {
     }
 }
 
+/// Tests that quoted hex color values remain as text instead of being converted to colors.
+///
+/// **Input:** List with quoted hex strings '{"#ff3333", "#00ff00"}'
+/// **Output:** List attribute with Text values (unquoted), not Color values
+/// **Rationale:** Ensures quoted strings are treated as literal text regardless of hex pattern
+///
+/// Validates that quotation marks prevent automatic color type conversion.
 #[test]
 fn test_quoted_hex_colors_remain_text() {
     let list_str = r##"{"#ff3333", "#00ff00"}"##;
@@ -1244,7 +1539,6 @@ fn test_quoted_hex_colors_remain_text() {
     if let Attribute::List(values) = attribute {
         assert_eq!(values.len(), 2);
 
-        // Quoted hex colors should remain as Text (unquoted)
         assert!(
             matches!(values[0], AttributeValue::Text(ref s) if s == "#ff3333")
         );
@@ -1258,6 +1552,13 @@ fn test_quoted_hex_colors_remain_text() {
     }
 }
 
+/// Tests that list attributes containing colors report correct type information.
+///
+/// **Input:** List attribute containing Integer and Color values "[1, #ff3333]"
+/// **Output:** AttributeType::List with correct element types [Integer, Color]
+/// **Rationale:** Ensures type system correctly identifies mixed-type lists for validation
+///
+/// Validates that color types are properly reflected in the attribute type system.
 #[test]
 fn test_hex_color_attribute_types() {
     let list_with_color = Attribute::from_str("[1, #ff3333]").unwrap();
@@ -1271,12 +1572,18 @@ fn test_hex_color_attribute_types() {
     }
 }
 
+/// Tests that list attributes with colors display correctly in string format.
+///
+/// **Input:** List attribute with mixed types including color "[1, #ff3333, 2.5]"
+/// **Output:** Display string containing normalized color "#FF3333" and other values
+/// **Rationale:** Ensures list formatting maintains color normalization in output
+///
+/// Validates that Display trait properly formats lists containing color values.
 #[test]
 fn test_list_display_with_colors() {
     let list_str = "[1, #ff3333, 2.5]";
     let attribute = Attribute::from_str(list_str).unwrap();
 
-    // Display should show colors in uppercase
     let display_str = format!("{}", attribute);
     assert!(display_str.contains("#FF3333"));
     assert!(display_str.contains("1"));
@@ -1285,16 +1592,21 @@ fn test_list_display_with_colors() {
     println!("Display format: {}", display_str);
 }
 
+/// Tests parsing of IQ-TREE specific hilight attribute format with exact decimal precision.
+///
+/// **Input:** IQ-TREE hilight string "{8,0.18815655069999998,#ff3333}" with high-precision decimal
+/// **Output:** List attribute with Integer(8), Decimal (precise), Color("#FF3333")
+/// **Rationale:** Ensures IQ-TREE's specific hilight format with long decimals parses correctly
+///
+/// Validates that real-world IQ-TREE output with precise decimal values is handled properly.
 #[test]
 fn test_iqtree_hilight_attribute_parsing() {
-    // This specifically tests the original issue reported
     let hilight_str = "{8,0.18815655069999998,#ff3333}";
     let attribute = Attribute::from_str(hilight_str).unwrap();
 
     if let Attribute::List(values) = attribute {
         assert_eq!(values.len(), 3);
 
-        // Verify the exact pattern from the issue
         assert!(matches!(values[0], AttributeValue::Integer(8)));
         assert!(matches!(values[1], AttributeValue::Decimal(_)));
         assert!(
@@ -1311,19 +1623,23 @@ fn test_iqtree_hilight_attribute_parsing() {
 // IQ-TREE FILE TESTS
 // ============================================================================
 
+/// Tests parsing of real IQ-TREE output files with complex annotation attributes.
+///
+/// **Input:** Real IQ-TREE treefile with !hilight and !collapse annotations
+/// **Output:** Successfully parsed tree with List attributes containing correct mixed types
+/// **Rationale:** Validates real-world compatibility with IQ-TREE phylogenetic software output
+///
+/// This integration test ensures the parser handles actual IQ-TREE files with their specific annotation formats.
 #[test]
 fn test_iqtree_file_parsing() {
-    // Read the actual IQ-TREE file
     let content = fs::read_to_string(
         "tests/data/iqtree/turtle_aa.fasta.treefile.cf.tree.nex.newick",
     )
     .expect("Failed to read IQ-TREE file");
 
-    // Parse the tree
     let trees = parse_newick(content).expect("Failed to parse IQ-TREE file");
     let tree = &trees[0];
 
-    // Find nodes with the problematic attributes
     let mut found_hilight = false;
     let mut found_collapse = false;
 
@@ -1331,14 +1647,12 @@ fn test_iqtree_file_parsing() {
         let node_attrs = tree.node_attributes(node_id);
         let branch_attrs = tree.branch_attributes(node_id);
 
-        // Check for !hilight attribute in both node and branch attributes
         if let Some(hilight_attr) =
             node_attrs.get("!hilight").or_else(|| branch_attrs.get("!hilight"))
         {
             found_hilight = true;
             println!("Found !hilight: {:?}", hilight_attr);
 
-            // Verify it's parsed as List with correct structure
             if let Attribute::List(values) = hilight_attr {
                 assert_eq!(values.len(), 3, "!hilight should have 3 values");
                 assert!(
@@ -1362,7 +1676,6 @@ fn test_iqtree_file_parsing() {
             }
         }
 
-        // Check for !collapse attribute in both node and branch attributes
         if let Some(collapse_attr) = node_attrs
             .get("!collapse")
             .or_else(|| branch_attrs.get("!collapse"))
@@ -1370,7 +1683,6 @@ fn test_iqtree_file_parsing() {
             found_collapse = true;
             println!("Found !collapse: {:?}", collapse_attr);
 
-            // Verify it's parsed as List with correct structure
             if let Attribute::List(values) = collapse_attr {
                 assert_eq!(values.len(), 2, "!collapse should have 2 values");
                 assert!(
@@ -1406,11 +1718,15 @@ fn test_iqtree_file_parsing() {
 // IQ-TREE PARSING TESTS
 // ============================================================================
 
+/// Tests parsing of specific IQ-TREE attribute formats with precise decimal values.
+///
+/// **Input:** IQ-TREE attribute strings with high-precision decimals and mixed types
+/// **Output:** Correctly parsed List attributes maintaining decimal precision
+/// **Rationale:** Validates parsing of actual IQ-TREE attribute patterns found in real output files
+///
+/// Tests both !hilight (integer, decimal, color) and !collapse (text, decimal) attribute formats.
 #[test]
 fn test_iqtree_attribute_parsing() {
-    // Test the specific cases from the IQ-TREE file
-
-    // Test !hilight={8,0.18815655069999998,#ff3333}
     let hilight =
         Attribute::from_str("{8,0.18815655069999998,#ff3333}").unwrap();
 
@@ -1427,7 +1743,6 @@ fn test_iqtree_attribute_parsing() {
         panic!("Expected List attribute for hilight");
     }
 
-    // Test !collapse={"collapsed",0.18815655069999998}
     let collapse =
         Attribute::from_str(r#"{"collapsed",0.18815655069999998}"#).unwrap();
 
@@ -1526,6 +1841,13 @@ fn test_display_formatting_curly_vs_square() {
 // NEWICK BASIC TESTS
 // ============================================================================
 
+/// Tests standard Newick format compliance across various tree structures and naming conventions.
+///
+/// **Input:** Multiple Newick format variations: empty nodes, named nodes, branch lengths, multifurcations
+/// **Output:** Correctly parsed trees with expected tip counts and node counts
+/// **Rationale:** Ensures parser adheres to standard Newick format specification for all common patterns
+///
+/// Validates parsing of binary trees, multifurcating trees, single nodes, and various labeling schemes.
 #[test]
 fn test_standard_format_compliance() {
     let test_cases = vec![
@@ -1536,10 +1858,8 @@ fn test_standard_format_compliance() {
         ("Names and branch lengths", "(A:0.1,B:0.2,(C:0.3,D:0.4):0.5);", 4, 6),
         ("All names and branches", "(A:0.1,B:0.2,(C:0.3,D:0.4)E:0.5)F;", 4, 6),
         ("Rooted on leaf", "((B:0.2,(C:0.3,D:0.4)E:0.5)F:0.1)A;", 3, 6),
-        // Single node trees (single node is root, not tip)
         ("Single node", "A;", 0, 1),
         ("Single node with branch", "A:0.5;", 0, 1),
-        // Binary vs non-binary trees
         ("Multifurcating tree", "(A,B,C,D);", 4, 5),
         ("Medium multifurcation", "(A,B,C,D,E,F,G);", 7, 8),
     ];
@@ -1578,12 +1898,17 @@ fn test_standard_format_compliance() {
     }
 }
 
+/// Tests parsing of quoted node labels and proper escaping mechanisms.
+///
+/// **Input:** Various Newick strings with quoted labels, escape sequences, and special characters
+/// **Output:** Correctly parsed node labels with proper unescaping and underscore-to-space conversion
+/// **Rationale:** Ensures proper handling of complex node labels that contain special characters or spaces
+///
+/// Tests single/double quotes, escape sequences, underscore handling, and preservation of whitespace.
 #[test]
 fn test_quoted_labels_and_escaping() {
     let test_cases = vec![
-        // Unquoted labels (underscores become spaces)
         ("Underscore to space", "(A_B,C_D);", vec!["A B", "C D"]),
-        // Single quoted labels
         ("Single quotes", "('Label A','Label B');", vec!["Label A", "Label B"]),
         (
             "Escaped single quotes",
@@ -1595,7 +1920,6 @@ fn test_quoted_labels_and_escaping() {
             "('A_B','C_D');",
             vec!["A_B", "C_D"],
         ),
-        // Double quoted labels
         (
             "Double quotes",
             r#"("Label A","Label B");"#,
@@ -1606,7 +1930,6 @@ fn test_quoted_labels_and_escaping() {
             r#"("say ""hello""","say ""goodbye""");"#,
             vec!["say \"hello\"", "say \"goodbye\""],
         ),
-        // Special characters in quotes
         (
             "Special chars in quotes",
             "('a (b','c)[],; :');",
@@ -1617,7 +1940,6 @@ fn test_quoted_labels_and_escaping() {
             "('A,B','C;D','E(F)','G:H');",
             vec!["A,B", "C;D", "E(F)", "G:H"],
         ),
-        // Whitespace handling
         ("Whitespace in quotes", "('A B','C\tD');", vec!["A B", "C\tD"]),
     ];
 
@@ -1649,27 +1971,29 @@ fn test_quoted_labels_and_escaping() {
     }
 }
 
+/// Tests parsing of branch annotations and node attributes across different phylogenetic formats.
+///
+/// **Input:** Newick strings with various attribute formats (BEAST, IQ-TREE, basic annotations)
+/// **Output:** Successfully parsed trees with correctly assigned node and branch attributes
+/// **Rationale:** Ensures comprehensive support for different phylogenetic software annotation styles
+///
+/// Validates node attributes, branch attributes, quoted values, list values, and mixed attribute types.
 #[test]
 fn test_branch_annotations_and_attributes() {
     let test_cases = vec![
-        // Basic attributes
         ("Simple node attribute", "(A[&color=red],B);", "A"),
         ("Simple branch attribute", "(A:0.1[&support=95],B);", "A"),
-        // IQ-TREE style attributes
         ("IQ-TREE gCF", r#"(A:0.1[&gCF="95.5"],B);"#, "A"),
         ("IQ-TREE complex", r#"(A[&gCF="95",gDF1="5"]:0.1,B);"#, "A"),
         ("IQ-TREE bootstrap", "(A:0.1[&bootstrap=95],B);", "A"),
-        // BEAST style attributes
         ("BEAST height", "(A[&height=100.0]:0.1,B);", "A"),
         ("BEAST posterior", "(A:0.1[&posterior=0.95],B);", "A"),
         ("BEAST rate", "(A[&rate=1.5]:0.1,B);", "A"),
-        // Multiple attributes
         ("Multiple attributes", "(A[&attr1=val1,attr2=val2]:0.1,B);", "A"),
         (
             "Mixed node and branch", "(A[&nodeAttr=1]:0.1[&branchAttr=2],B);",
             "A",
         ),
-        // Complex values with quotes and lists
         ("Quoted values", r#"(A[&color="bright red"]:0.1,B);"#, "A"),
         ("List values", "(A[&colors={red,green,blue}]:0.1,B);", "A"),
         ("BEAST color list", "(A:[&colour={0,8.0,1,12.0,0}]0.1,B);", "A"),
@@ -1682,7 +2006,6 @@ fn test_branch_annotations_and_attributes() {
 
         let tree = &trees[0];
 
-        // Find the node with the expected label
         let tip_ids = tree.tip_node_ids_all();
         let node_id = tip_ids
             .iter()
@@ -1696,7 +2019,6 @@ fn test_branch_annotations_and_attributes() {
                 panic!("Could not find node '{}' in tree", node_with_attrs)
             });
 
-        // Check that the node has some attributes (either node or branch)
         let node_attributes = tree.node_attributes(*node_id);
         let branch_attributes = tree.branch_attributes(*node_id);
         let has_attributes =
@@ -1717,9 +2039,15 @@ fn test_branch_annotations_and_attributes() {
     }
 }
 
+/// Tests Rich NEWICK format rooting annotations that control tree topology interpretation.
+///
+/// **Input:** Rich NEWICK strings with [&U] (unrooted) and [&R] (rooted) annotations
+/// **Output:** Trees with correct node counts based on rooting specification (6 vs 7 nodes)
+/// **Rationale:** Ensures rooting annotations properly influence tree structure interpretation
+///
+/// Validates that rooting annotations affect the final tree topology as per Rich NEWICK specification.
 #[test]
 fn test_rich_format_rooting_annotations() {
-    // Rich NEWICK format rooting
     let rooting_cases = vec![
         ("Force unrooted", "[&U](A,B,(C,D));"),
         ("Force rooted", "[&R](A,B,(C,D));"),
@@ -1734,7 +2062,6 @@ fn test_rich_format_rooting_annotations() {
         let tree = &trees[0];
         assert_eq!(tree.tip_count_all(), 4, "Should have 4 tips");
 
-        // [&U] keeps it unrooted (6 nodes), [&R] forces rooted (7 nodes)
         let expected_nodes = if name.contains("unrooted") { 6 } else { 7 };
         assert_eq!(
             tree.node_count_all(),
@@ -1751,9 +2078,15 @@ fn test_rich_format_rooting_annotations() {
     }
 }
 
+/// Tests Rich NEWICK extended bootstrap format with multiple colon-separated values.
+///
+/// **Input:** Rich NEWICK strings with :length:bootstrap:probability format and empty field handling
+/// **Output:** Successfully parsed trees with correct node counts despite extended value syntax
+/// **Rationale:** Ensures compatibility with Rich NEWICK's extended bootstrap value format
+///
+/// Tests parsing of :length:bootstrap:probability syntax, empty fields (::), and mixed formats.
 #[test]
 fn test_rich_format_extended_bootstrap() {
-    // Rich NEWICK extended bootstrap format: :length:bootstrap:probability
     let extended_cases = vec![
         ("Rich bootstrap", "(A:0.1:95:0.95,B:0.2:80:0.80);", 2, 3),
         ("Rich with empty fields", "(A:0.1::0.95,B:0.2:80:);", 2, 3),
@@ -1794,6 +2127,13 @@ fn test_rich_format_extended_bootstrap() {
     }
 }
 
+/// Tests NHX (New Hampshire eXtended) format support for phylogenetic annotations.
+///
+/// **Input:** NHX format strings with [&&NHX:attribute=value] syntax for species, duplications, bootstrap
+/// **Output:** Successfully parsed trees with correct node counts
+/// **Rationale:** Ensures compatibility with NHX format used for gene tree/species tree reconciliation
+///
+/// Tests species annotations (S=), duplication events (D=), bootstrap values (B=), and multiple attributes.
 #[test]
 fn test_nhx_format_support() {
     let test_cases = vec![
@@ -1840,9 +2180,15 @@ fn test_nhx_format_support() {
     }
 }
 
+/// Tests processing of comments in square brackets within Newick trees.
+///
+/// **Input:** Newick strings containing various comment formats in square brackets
+/// **Output:** Successfully parsed trees with comments handled appropriately
+/// **Rationale:** Ensures comment syntax doesn't interfere with tree structure parsing
+///
+/// Tests simple comments, nested comments, special characters, and comments mixed with attributes.
 #[test]
 fn test_comment_processing() {
-    // Comments in square brackets should be preserved or ignored appropriately
     let test_cases = vec![
         ("Simple comment", "(A[comment],B);", 2, 3),
         ("Nested comments", "(A[outer[inner]comment],B);", 2, 3),
@@ -1885,6 +2231,13 @@ fn test_comment_processing() {
     }
 }
 
+/// Tests parsing of multiple trees from a single input string.
+///
+/// **Input:** String containing three separate Newick trees with different structures
+/// **Output:** Vector of three correctly parsed Tree objects with expected node counts
+/// **Rationale:** Ensures parser can handle multiple trees in sequence from single input
+///
+/// Validates parsing of multifurcating and binary trees, and correct tree separation.
 #[test]
 fn test_multiple_tree_parsing() {
     let multi_tree_str = r#"
@@ -1899,7 +2252,6 @@ fn test_multiple_tree_parsing() {
 
     assert_eq!(trees.len(), 3, "Should parse exactly 3 trees");
 
-    // First tree: (A,B,C)
     assert_eq!(trees[0].tip_count_all(), 3, "First tree should have 3 tips");
     assert_eq!(
         trees[0].node_count_all(),
@@ -1907,7 +2259,6 @@ fn test_multiple_tree_parsing() {
         "First tree should have 4 total nodes"
     );
 
-    // Second tree: (X,Y,Z)
     assert_eq!(trees[1].tip_count_all(), 3, "Second tree should have 3 tips");
     assert_eq!(
         trees[1].node_count_all(),
@@ -1915,7 +2266,6 @@ fn test_multiple_tree_parsing() {
         "Second tree should have 4 total nodes"
     );
 
-    // Third tree: ((P,Q),(R,S))
     assert_eq!(trees[2].tip_count_all(), 4, "Third tree should have 4 tips");
     assert_eq!(
         trees[2].node_count_all(),
@@ -1926,15 +2276,21 @@ fn test_multiple_tree_parsing() {
     println!("Parsed {} trees with expected structure", trees.len());
 }
 
+/// Tests filtering of hash comments in Newick input while preserving hashes in quoted strings.
+///
+/// **Input:** Newick strings with hash comments at various positions and quoted strings containing hashes
+/// **Output:** Successfully parsed trees with hash comments removed but quoted hashes preserved
+/// **Rationale:** Ensures proper comment filtering that doesn't interfere with legitimate hash characters
+///
+/// Tests hash comments at start, end, middle, multiple comments, and hash preservation in quotes.
 #[test]
 fn test_hash_comment_filtering() {
-    // Hash comments should be filtered out
     let test_cases = vec![
         ("Hash comment at start", "# This is a comment\n(A,B,C);", 3, 4),
         ("Hash comment at end", "(A,B,C); # This tree has 3 taxa", 3, 4),
         ("Hash comment in middle", "(A,B,# comment\nC);", 3, 4),
         ("Multiple hash comments", "# Comment 1\n(A,B,C); # Comment 2", 3, 4),
-        ("Hash in quoted string", "('Label#WithHash',B);", 2, 3), // Should preserve hash in quotes
+        ("Hash in quoted string", "('Label#WithHash',B);", 2, 3),
     ];
 
     for (name, newick_str, expected_tips, expected_nodes) in test_cases {
@@ -1971,9 +2327,15 @@ fn test_hash_comment_filtering() {
     }
 }
 
+/// Tests parser robustness with various edge cases and unusual but valid formatting.
+///
+/// **Input:** Newick strings with extreme whitespace, empty/zero/extreme branch lengths
+/// **Output:** Successfully parsed trees despite unusual formatting
+/// **Rationale:** Ensures parser handles real-world variations in formatting and edge case values
+///
+/// Tests whitespace handling, newlines, tabs, empty branch lengths, and extreme numeric values.
 #[test]
 fn test_edge_cases_and_malformed_inputs() {
-    // Test parser robustness with edge cases
     let valid_edge_cases = vec![
         ("Whitespace everywhere", "( A , B , ( C , D ) ) ;", 4, 6),
         ("No spaces", "(A,B,(C,D));", 4, 6),
@@ -2019,9 +2381,15 @@ fn test_edge_cases_and_malformed_inputs() {
     }
 }
 
+/// Tests that malformed Newick inputs are properly rejected by the parser.
+///
+/// **Input:** Various malformed Newick strings (missing semicolons, unmatched parentheses/quotes)
+/// **Output:** Parser returns None or empty vector for all malformed inputs
+/// **Rationale:** Ensures parser robustly rejects invalid input rather than producing incorrect trees
+///
+/// Tests missing semicolons, unmatched parentheses, malformed quotes, and empty strings.
 #[test]
 fn test_malformed_input_rejection() {
-    // Test cases that should fail to parse
     let malformed_cases = vec![
         ("Missing semicolon", "(A,B,C)"),
         ("Unmatched parentheses open", "((A,B,C);"),
@@ -2045,7 +2413,6 @@ fn test_malformed_input_rejection() {
         println!("Correctly rejected malformed input");
     }
 
-    // Test empty string separately (returns empty vec, not None)
     let empty_result = parse_newick("".to_string());
     assert!(
         empty_result.is_none() || empty_result.unwrap().is_empty(),
@@ -2106,7 +2473,7 @@ fn test_iqtree_bracket_attributes_with_commas() {
                     let tips: Vec<String> = trees[0]
                         .tip_node_ids_all()
                         .iter()
-                        .filter_map(|id| {
+                        .filter_map(|&id| {
                             trees[0].label(id).map(|s| s.to_string())
                         })
                         .collect();
@@ -2157,12 +2524,12 @@ fn test_iqtree_real_treefile_parsing() {
     let tips1: Vec<String> = tree1
         .tip_node_ids_all()
         .iter()
-        .filter_map(|id| tree1.label(id).map(|s| s.to_string()))
+        .filter_map(|&id| tree1.label(id).map(|s| s.to_string()))
         .collect();
     let tips2: Vec<String> = tree2
         .tip_node_ids_all()
         .iter()
-        .filter_map(|id| tree2.label(id).map(|s| s.to_string()))
+        .filter_map(|&id| tree2.label(id).map(|s| s.to_string()))
         .collect();
 
     assert_eq!(
@@ -2183,6 +2550,13 @@ fn test_iqtree_real_treefile_parsing() {
 // NEXUS TESTS
 // ============================================================================
 
+/// Tests parsing of basic NEXUS format structure with Taxa and Trees blocks.
+///
+/// **Input:** Standard NEXUS file with Taxa block (4 taxa) and Trees block (1 tree)
+/// **Output:** Successfully parsed NEXUS with correct taxon count and tree structure
+/// **Rationale:** Validates fundamental NEXUS format parsing including block structure and content
+///
+/// Tests basic NEXUS syntax, taxon labels, tree definitions, and proper block parsing.
 #[test]
 fn test_standard_format_structure() {
     let basic_nexus = r#"
@@ -2209,7 +2583,6 @@ End;
 
     let nexus_file = result.unwrap();
 
-    // Check taxa
     assert_eq!(nexus_file.taxon_count(), 4, "Should have 4 taxa");
     assert_eq!(
         nexus_file.taxon_labels().len(),
@@ -2217,7 +2590,6 @@ End;
         "Should have 4 taxon labels"
     );
 
-    // Check trees
     assert_eq!(nexus_file.tree_count(), 1, "Should have 1 tree");
     assert!(
         nexus_file.tree("tree1").is_some(),
@@ -2236,6 +2608,13 @@ End;
     );
 }
 
+/// Tests NEXUS translation table support for mapping numeric IDs to species names.
+///
+/// **Input:** NEXUS file with Translate block mapping numbers (1-4) to species names
+/// **Output:** Successfully parsed NEXUS with correct translation mappings and tree structures
+/// **Rationale:** Validates NEXUS translation table parsing for efficient tree representation
+///
+/// Tests translation table parsing, numeric ID mapping, and tree parsing with translated labels.
 #[test]
 fn test_translation_table_support() {
     let nexus_with_translate = r#"
@@ -2262,7 +2641,6 @@ End;
 
     let nexus_file = result.unwrap();
 
-    // Check translate table
     assert!(
         nexus_file.translate_table.is_some(),
         "Should have translate table"
@@ -2278,8 +2656,6 @@ End;
     assert_eq!(translate_table.get("2"), Some(&"Species B".to_string()));
     assert_eq!(translate_table.get("3"), Some(&"Species C".to_string()));
     assert_eq!(translate_table.get("4"), Some(&"Species D".to_string()));
-
-    // Check trees
     assert_eq!(nexus_file.tree_count(), 2, "Should have 2 trees");
 
     // Verify that tip labels were translated
@@ -2304,6 +2680,13 @@ End;
     );
 }
 
+/// Tests NEXUS Taxa block parsing with taxon-level attributes and attribute merging.
+///
+/// **Input:** NEXUS with Taxa block containing taxon labels with attributes [&color=red,type=mammal]
+/// **Output:** Successfully parsed taxa with attributes that merge into tree node attributes
+/// **Rationale:** Validates NEXUS taxon attribute parsing and proper attribute inheritance to tree nodes
+///
+/// Tests taxon attribute parsing, attribute merging into trees, and taxon label handling with quotes.
 #[test]
 fn test_taxa_block_with_attributes() {
     let nexus_with_taxa_attributes = r#"
@@ -2332,7 +2715,6 @@ End;
 
     let nexus_file = result.unwrap();
 
-    // Check taxa attributes
     assert_eq!(nexus_file.taxon_count(), 3, "Should have 3 taxa");
 
     let taxa_a = nexus_file.taxon("Species A");
@@ -2345,11 +2727,9 @@ End;
     let taxa_b = taxa_b.unwrap();
     assert!(!taxa_b.attributes.is_empty(), "Species B should have attributes");
 
-    // Check that attributes are merged into tree nodes
     let tree = nexus_file.tree("test").unwrap();
     assert_eq!(tree.tip_count_all(), 3, "Tree should have 3 tips");
 
-    // Find Species A node and check if it has attributes
     let tip_ids = tree.tip_node_ids_all();
     let species_a_node = tip_ids.iter().find(|&&id| {
         tree.node(Some(id))
@@ -2371,6 +2751,13 @@ End;
     );
 }
 
+/// Tests NEXUS parsing of multiple trees with various complexity levels and branch lengths.
+///
+/// **Input:** NEXUS with three trees: simple multifurcation, with branch lengths, and complex nested structure
+/// **Output:** All trees parsed correctly with proper tip counts and node structures
+/// **Rationale:** Validates NEXUS support for multiple tree definitions with varying complexity
+///
+/// Tests simple trees, branch length parsing, complex nested structures, and tree name handling.
 #[test]
 fn test_multiple_trees_and_branch_lengths() {
     let nexus_multiple_trees = r#"
@@ -2392,16 +2779,13 @@ End;
 
     let nexus_file = result.unwrap();
 
-    // Check tree count
     assert_eq!(nexus_file.tree_count(), 3, "Should have 3 trees");
 
-    // Check tree names
     let tree_names = nexus_file.tree_names();
     assert!(tree_names.contains(&&"simple".to_string()));
     assert!(tree_names.contains(&&"with_lengths".to_string()));
     assert!(tree_names.contains(&&"complex".to_string()));
 
-    // Check simple tree
     let simple_tree = nexus_file.tree("simple").unwrap();
     assert_eq!(
         simple_tree.tip_count_all(),
@@ -2409,7 +2793,6 @@ End;
         "Simple tree should have 3 tips"
     );
 
-    // Check tree with branch lengths
     let lengths_tree = nexus_file.tree("with_lengths").unwrap();
     assert_eq!(
         lengths_tree.tip_count_all(),
@@ -2417,7 +2800,6 @@ End;
         "Lengths tree should have 3 tips"
     );
 
-    // Check complex tree
     let complex_tree = nexus_file.tree("complex").unwrap();
     assert_eq!(
         complex_tree.tip_count_all(),
@@ -2436,6 +2818,13 @@ End;
     );
 }
 
+/// Tests NEXUS parsing of BEAST-style annotation metacomments with complex nested attributes.
+///
+/// **Input:** NEXUS tree with BEAST annotations [&height=100.0,rate=1.5] on nodes and branches
+/// **Output:** Successfully parsed tree with correct structure despite complex BEAST attribute syntax
+/// **Rationale:** Ensures NEXUS parser handles BEAST's complex metacomment annotation format
+///
+/// Tests nested BEAST annotations, multiple attributes per node, and tree structure preservation.
 #[test]
 fn test_beast_annotation_support() {
     let nexus_beast_style = r#"
@@ -2455,7 +2844,6 @@ End;
 
     let nexus_file = result.unwrap();
 
-    // Check tree exists and structure
     assert_eq!(nexus_file.tree_count(), 1, "Should have 1 tree");
     let tree = nexus_file.tree("beast_tree").unwrap();
     assert_eq!(tree.tip_count_all(), 4, "BEAST tree should have 4 tips");
@@ -2472,9 +2860,15 @@ End;
     );
 }
 
+/// Tests NEXUS parsing of Rich NEWICK rooting annotations within tree definitions.
+///
+/// **Input:** NEXUS with three trees using [&U] (unrooted), [&R] (rooted), and no annotation
+/// **Output:** All trees parsed with appropriate node counts based on rooting specification
+/// **Rationale:** Ensures NEXUS parser handles Rich NEWICK rooting annotations correctly
+///
+/// Tests rooting annotation parsing, tree structure differences, and annotation effect on topology.
 #[test]
 fn test_tree_rooting_annotations() {
-    // Test Rich NEWICK style rooting within NEXUS
     let nexus_rooting = r#"
 #NEXUS
 
@@ -2494,10 +2888,8 @@ End;
 
     let nexus_file = result.unwrap();
 
-    // Check all trees parsed
     assert_eq!(nexus_file.tree_count(), 3, "Should have 3 trees");
 
-    // All should have same structure regardless of rooting annotation
     for tree_name in ["unrooted", "rooted", "normal"] {
         let tree = nexus_file.tree(tree_name).unwrap();
         assert_eq!(
@@ -2506,7 +2898,6 @@ End;
             "Tree '{}' should have 4 tips",
             tree_name
         );
-        // Note: (A,B,(C,D)) structure has 6 nodes when unrooted, but [&R] forces rooting which adds a node
         let expected_nodes = if tree_name == "rooted" { 7 } else { 6 };
         assert_eq!(
             tree.node_count_all(),
@@ -2520,9 +2911,15 @@ End;
     println!("All rooting annotation variants parsed successfully");
 }
 
+/// Tests NEXUS parsing of trees formatted across multiple lines with nested indentation.
+///
+/// **Input:** NEXUS with tree definition spanning multiple lines with proper indentation
+/// **Output:** Successfully parsed tree with correct structure despite multiline formatting
+/// **Rationale:** Ensures NEXUS parser handles real-world multiline tree formatting common in large phylogenies
+///
+/// Tests multiline parsing, indentation handling, and preservation of tree structure across line breaks.
 #[test]
 fn test_multiline_tree_formatting() {
-    // Test trees that span multiple lines (common in large phylogenies)
     let nexus_multiline = r#"
 #NEXUS
 
@@ -2559,9 +2956,15 @@ End;
     println!("Multiline tree parsed correctly");
 }
 
+/// Tests NEXUS parsing robustness with various whitespace and formatting variations.
+///
+/// **Input:** NEXUS file with extra whitespace, line breaks, and spacing variations
+/// **Output:** Successfully parsed NEXUS with correct taxon and tree counts
+/// **Rationale:** Ensures NEXUS parser is robust to formatting variations in real-world files
+///
+/// Tests whitespace tolerance, line break handling, and preservation of content despite formatting.
 #[test]
 fn test_comment_and_whitespace_handling() {
-    // Test handling of whitespace (comments need more work in parser)
     let nexus_with_comments = r#"
 #NEXUS
 
@@ -2594,9 +2997,15 @@ End;
     println!("Whitespace handled correctly");
 }
 
+/// Tests NEXUS format case-insensitive keyword parsing according to specification.
+///
+/// **Input:** NEXUS file with mixed case keywords (#nexus, begin, DIMENSIONS, END)
+/// **Output:** Successfully parsed NEXUS despite case variations in keywords
+/// **Rationale:** Ensures NEXUS parser follows format specification for case-insensitive keywords
+///
+/// Tests case insensitivity for block names, commands, and format identifiers per NEXUS standard.
 #[test]
 fn test_case_insensitive_keyword_parsing() {
-    // NEXUS format should be case-insensitive for keywords
     let nexus_mixed_case = r#"
 #nexus
 
@@ -2628,9 +3037,15 @@ END;
     println!("Mixed case keywords handled correctly");
 }
 
+/// Tests NEXUS parser error handling with various malformed input scenarios.
+///
+/// **Input:** Four types of malformed NEXUS files (missing header, taxa mismatch, unterminated block, invalid tree)
+/// **Output:** Appropriate error types returned for each malformed input category
+/// **Rationale:** Ensures robust error handling that provides meaningful error messages for debugging
+///
+/// Tests error detection, error type classification, and graceful failure modes for invalid NEXUS input.
 #[test]
 fn test_malformed_input_error_handling() {
-    // Test various error conditions
     let error_cases = vec![
         (
             "Missing header",
@@ -2716,9 +3131,15 @@ End;
     }
 }
 
+/// Tests parsing of realistic MrBayes NEXUS output with generation trees and translation tables.
+///
+/// **Input:** MrBayes-style NEXUS with translate table, generation trees, and precise branch lengths
+/// **Output:** Successfully parsed trees with numeric IDs translated to taxon names
+/// **Rationale:** Ensures compatibility with MrBayes phylogenetic inference software output
+///
+/// Tests MrBayes format conventions, translation application, and unrooted tree handling.
 #[test]
 fn test_mrbayes_real_output_parsing() {
-    // Test a realistic MrBayes-style NEXUS format
     let mrbayes_style = r#"
 #NEXUS
 
@@ -2740,7 +3161,6 @@ end;
 
     let nexus_file = result.unwrap();
 
-    // Check translate table
     assert!(
         nexus_file.translate_table.is_some(),
         "Should have translate table"
@@ -2748,10 +3168,8 @@ end;
     let translate_table = nexus_file.translate_table.as_ref().unwrap();
     assert_eq!(translate_table.len(), 4, "Should have 4 translations");
 
-    // Check trees
     assert_eq!(nexus_file.tree_count(), 2, "Should have 2 trees");
 
-    // Check both trees have correct structure
     for tree_name in ["gen.1", "gen.2"] {
         let tree = nexus_file.tree(tree_name).unwrap();
         assert_eq!(
@@ -2760,7 +3178,6 @@ end;
             "Tree '{}' should have 4 tips",
             tree_name
         );
-        // MrBayes trees with [&U] annotation remain unrooted (6 nodes)
         assert_eq!(
             tree.node_count_all(),
             6,
@@ -2768,7 +3185,6 @@ end;
             tree_name
         );
 
-        // Check that translations were applied
         let tip_labels: Vec<String> = tree
             .tip_node_ids_all()
             .iter()
@@ -2777,7 +3193,6 @@ end;
             })
             .collect();
 
-        // Should not contain numeric labels
         assert!(
             !tip_labels.contains(&"1".to_string()),
             "Should not have numeric label '1'"
@@ -2787,7 +3202,6 @@ end;
             "Should not have numeric label '2'"
         );
 
-        // Should contain translated labels
         assert!(
             tip_labels.contains(&"Taxon A".to_string()),
             "Should have translated label 'Taxon A'"
@@ -2804,9 +3218,15 @@ end;
     );
 }
 
+/// Tests the simplified NEXUS parsing interface that returns only tree objects.
+///
+/// **Input:** Simple NEXUS file with two trees using basic parse_nexus() function
+/// **Output:** Vector of Tree objects without NEXUS metadata (translation tables, taxa blocks)
+/// **Rationale:** Validates simplified interface for users who only need tree data
+///
+/// Tests simplified parsing workflow and tree extraction without full NEXUS structure parsing.
 #[test]
 fn test_simplified_parsing_interface() {
-    // Test the simple parse_nexus interface (not _advanced)
     let simple_nexus = r#"
 #NEXUS
 
@@ -2824,15 +3244,20 @@ End;
 
     assert_eq!(trees.len(), 2, "Should return 2 trees");
 
-    // Check first tree
     assert_eq!(trees[0].tip_count_all(), 3, "First tree should have 3 tips");
 
-    // Check second tree
     assert_eq!(trees[1].tip_count_all(), 3, "Second tree should have 3 tips");
 
     println!("Simple interface returned {} trees", trees.len());
 }
 
+/// Tests NEXUS parsing of trees with polytomies (multifurcations) in mammalian phylogeny context.
+///
+/// **Input:** NEXUS with three trees showing different polytomy patterns among mammal orders
+/// **Output:** Successfully parsed trees with correct polytomy structures and node counts
+/// **Rationale:** Validates parser support for non-binary trees common in phylogenetic uncertainty
+///
+/// Tests star phylogenies, partial polytomies, mixed binary/polytomy structures, and node degree analysis.
 #[test]
 fn test_polytomy_support_in_nexus() {
     let nexus_with_polytomies = r#"
@@ -2864,11 +3289,9 @@ End;
     let nexus_file = result.unwrap();
     assert_eq!(nexus_file.tree_count(), 3, "Should have 3 trees");
 
-    // Test mammal_orders tree: (Primates,(Rodents,Carnivores,Ungulates,Bats),Insectivores)
     let mammal_tree = nexus_file.tree("mammal_orders").unwrap();
     assert_eq!(mammal_tree.tip_count_all(), 6, "Should have 6 taxa");
 
-    // Test star_phylogeny: complete polytomy
     let star_tree = nexus_file.tree("star_phylogeny").unwrap();
     assert_eq!(star_tree.tip_count_all(), 6, "Star tree should have 6 taxa");
     assert_eq!(
@@ -2877,13 +3300,11 @@ End;
         "Star tree should have 7 total nodes (6 tips + 1 root)"
     );
 
-    // Root should have 6 children (complete polytomy)
     if let Some(root_id) = star_tree.first_node_id() {
-        let root_children = star_tree.child_ids(&root_id).len();
+        let root_children = star_tree.child_ids(root_id).len();
         assert_eq!(root_children, 6, "Star tree root should have 6 children");
     }
 
-    // Test mixed_polytomy tree
     let mixed_tree = nexus_file.tree("mixed_polytomy").unwrap();
     assert_eq!(mixed_tree.tip_count_all(), 6, "Mixed tree should have 6 taxa");
 
@@ -2894,15 +3315,20 @@ End;
 // PARSING PERFORMANCE TESTS
 // ============================================================================
 
+/// Tests parsing performance on large balanced binary trees with up to 15,000 tips.
+///
+/// **Input:** Generated balanced binary trees of increasing size (1K, 5K, 10K, 15K tips)
+/// **Output:** All trees parsed within performance benchmarks, correct node counts validated
+/// **Rationale:** Ensures parser performance scales appropriately for large phylogenetic datasets
+///
+/// Tests performance benchmarks, memory efficiency, tree height calculation, and large-scale validation.
 #[test]
 fn test_large_tree_parsing_performance() {
-    // Test validation on truly large trees (>10,000 nodes) to ensure performance is reasonable
     let large_tree_sizes = vec![1000, 5000, 10000, 15000];
 
     for size in large_tree_sizes {
         println!("Testing large tree validation: {} tips", size);
 
-        // Generate a balanced binary tree string
         let newick_str = generate_balanced_tree_string(size);
 
         let start_time = std::time::Instant::now();
@@ -2914,7 +3340,6 @@ fn test_large_tree_parsing_performance() {
 
         let validation_start = std::time::Instant::now();
 
-        // Validate basic properties
         assert_eq!(
             tree.tip_count_all(),
             size,
@@ -2930,10 +3355,8 @@ fn test_large_tree_parsing_performance() {
             size
         );
 
-        // Calculate tree height (should be log2(size) for balanced binary tree)
         let height = calculate_tree_height(tree);
 
-        // Validate structure makes sense
         assert!(height > 0.0, "Tree height should be positive");
 
         let validation_duration = validation_start.elapsed();
@@ -2946,7 +3369,6 @@ fn test_large_tree_parsing_performance() {
             height
         );
 
-        // Performance check: parsing + validation should be reasonably fast even for large trees
         let total_time = parse_duration + validation_duration;
         let max_time_ms = if size >= 10000 {
             30000
@@ -3035,12 +3457,18 @@ fn generate_large_multifurcation_tree(n_tips: usize) -> String {
 // TREE POLYTOMIES TESTS
 // ============================================================================
 
+/// Tests parsing of trees with polytomies (multifurcations) of varying complexity.
+///
+/// **Input:** Various polytomy structures from simple trifurcations to large star trees (5000 tips)
+/// **Output:** Successfully parsed trees with correct polytomy structure validation
+/// **Rationale:** Ensures parser correctly handles non-binary tree structures common in phylogenetics
+///
+/// Tests basic polytomies, mixed binary/polytomy structures, large star trees, and polytomy degree analysis.
 #[test]
 fn test_basic_polytomy_parsing() {
     let large_star_tree = generate_large_star_tree(5000);
 
     let test_cases = vec![
-        // Basic polytomies
         (
             "Three-way polytomy",
             "(A,B,C);",
@@ -3065,7 +3493,7 @@ fn test_basic_polytomy_parsing() {
         ),
         (
             "Large star tree",
-            &large_star_tree, // 5000-tip star tree = 5001 nodes total
+            &large_star_tree,
             PolytomyExpectation {
                 tip_count: 5000,
                 total_nodes: 5001,
@@ -3074,7 +3502,6 @@ fn test_basic_polytomy_parsing() {
                 max_polytomy_size: 5000,
             },
         ),
-        // Mixed binary and polytomies
         (
             "Binary with polytomy",
             "((A,B),(C,D,E));",
@@ -3126,10 +3553,16 @@ fn test_basic_polytomy_parsing() {
     }
 }
 
+/// Tests polytomy parsing with branch length handling and tree height calculations.
+///
+/// **Input:** Polytomy trees with various branch length patterns (equal, different, ultrametric)
+/// **Output:** Correctly parsed trees with accurate height calculations and polytomy detection
+/// **Rationale:** Validates branch length preservation and height computation in non-binary trees
+///
+/// Tests equal/different branch lengths, ultrametric trees, height calculation accuracy, and polytomy detection.
 #[test]
 fn test_polytomy_branch_length_handling() {
     let test_cases = vec![
-        // Polytomies with branch lengths
         ("Polytomy equal branches", "(A:1.0,B:1.0,C:1.0,D:1.0);", 4, 1.0),
         ("Polytomy different branches", "(A:0.5,B:1.0,C:1.5,D:2.0);", 4, 2.0),
         (
@@ -3170,7 +3603,6 @@ fn test_polytomy_branch_length_handling() {
             actual_height
         );
 
-        // Verify tree is not strictly binary if it has polytomies
         let has_polytomies = has_multifurcating_nodes(tree);
         if has_polytomies {
             println!("Confirmed polytomies present (non-binary tree)");
@@ -3184,13 +3616,19 @@ fn test_polytomy_branch_length_handling() {
     }
 }
 
+/// Tests node degree analysis and polytomy detection in complex tree structures.
+///
+/// **Input:** Trees with varying node degrees and polytomy patterns
+/// **Output:** Accurate node degree statistics and polytomy identification
+/// **Rationale:** Ensures proper topological analysis of non-binary tree structures
+///
+/// Tests degree distribution analysis, maximum degree detection, polytomy identification, and complex tree topology.
 #[test]
 fn test_polytomy_node_degree_analysis() {
-    // Test that we can correctly identify and count nodes by degree
     let polytomy_cases = vec![
-        ("Simple trifurcation", "(A,B,C);", vec![3]), // root has degree 3
-        ("Mixed degrees", "((A,B),(C,D,E,F));", vec![2, 4]), // root=2, internal=4
-        ("Complex", "(A,(B,C,D),(E,F),(G,H,I,J));", vec![4, 3, 2, 4]), // various degrees
+        ("Simple trifurcation", "(A,B,C);", vec![3]),
+        ("Mixed degrees", "((A,B),(C,D,E,F));", vec![2, 4]),
+        ("Complex", "(A,(B,C,D),(E,F),(G,H,I,J));", vec![4, 3, 2, 4]),
     ];
 
     for (name, newick_str, expected_max_degrees) in polytomy_cases {
@@ -3227,13 +3665,19 @@ fn test_polytomy_node_degree_analysis() {
     }
 }
 
+/// Tests that polytomies are preserved without artificial resolution to binary structures.
+///
+/// **Input:** Trees with polytomies that should remain multifurcating
+/// **Output:** Polytomies preserved, binary tree formula violations detected correctly
+/// **Rationale:** Ensures parser doesn't artificially resolve polytomies into binary trees
+///
+/// Tests polytomy preservation, binary formula validation, and structural integrity maintenance.
 #[test]
 fn test_polytomy_binary_tree_relationship() {
-    // Test that polytomies are preserved and not artificially resolved
     let resolution_cases = vec![
-        ("Preserve trifurcation", "(A,B,C);", 3, 1), // 3 tips, 1 internal
-        ("Preserve large polytomy", "(A,B,C,D,E);", 5, 1), // 5 tips, 1 internal
-        ("Mixed preservation", "((A,B,C),D);", 4, 2), // 4 tips, 2 internals
+        ("Preserve trifurcation", "(A,B,C);", 3, 1),
+        ("Preserve large polytomy", "(A,B,C,D,E);", 5, 1),
+        ("Mixed preservation", "((A,B,C),D);", 4, 2),
     ];
 
     for (name, newick_str, expected_tips, expected_internals) in
@@ -3258,7 +3702,6 @@ fn test_polytomy_binary_tree_relationship() {
             name
         );
 
-        // Ensure the binary tree formula l = i + 1 does NOT hold for polytomies
         let follows_binary_formula =
             tree.tip_count_all() == tree.internal_node_count_all() + 1;
         if expected_internals < expected_tips - 1 {
@@ -3316,7 +3759,7 @@ fn validate_polytomy_expectations(
     );
 
     if let Some(root_id) = tree.first_node_id() {
-        let actual_root_children = tree.child_ids(&root_id).len();
+        let actual_root_children = tree.child_ids(root_id).len();
         assert_eq!(
             actual_root_children, expected.root_children,
             "Wrong root children count for {}: expected {}, got {}",
@@ -3335,7 +3778,7 @@ fn validate_polytomy_expectations(
 fn has_multifurcating_nodes(tree: &dendros::Tree) -> bool {
     let all_node_ids = tree.node_ids_all();
     for node_id in all_node_ids {
-        let child_count = tree.child_ids(&node_id).len();
+        let child_count = tree.child_ids(node_id).len();
         if child_count > 2 {
             return true;
         }
@@ -3349,7 +3792,7 @@ fn analyze_node_degrees(tree: &dendros::Tree) -> NodeDegreeStats {
 
     let all_node_ids = tree.node_ids_all();
     for node_id in all_node_ids {
-        let degree = tree.child_ids(&node_id).len();
+        let degree = tree.child_ids(node_id).len();
         *degree_counts.entry(degree).or_insert(0) += 1;
         max_degree = max_degree.max(degree);
     }
@@ -3372,10 +3815,16 @@ fn generate_large_star_tree(n_tips: usize) -> String {
 // TREE STRUCTURE TESTS
 // ============================================================================
 
+/// Tests comprehensive tree topology validation and structural analysis.
+///
+/// **Input:** Trees with various topologies (binary, polytomy, nested, deep, star structures)
+/// **Output:** Accurate topology statistics including depth, node counts, and binary classification
+/// **Rationale:** Ensures robust tree structure analysis for phylogenetic applications
+///
+/// Tests binary classification, depth calculation, node counting, polytomy detection, and structural validation.
 #[test]
 fn test_tree_topology_and_structure_validation() {
     let test_cases = vec![
-        // Basic topologies
         (
             "Simple bifurcating",
             "(A,B);",
@@ -3394,7 +3843,7 @@ fn test_tree_topology_and_structure_validation() {
                 tip_count: 3,
                 internal_count: 1,
                 total_count: 4,
-                is_binary: false, // Root has 3 children - POLYTOMY (trifurcation)
+                is_binary: false,
                 max_depth: 1,
             },
         ),
@@ -3427,7 +3876,7 @@ fn test_tree_topology_and_structure_validation() {
                 tip_count: 6,
                 internal_count: 1,
                 total_count: 7,
-                is_binary: false, // POLYTOMY: Star tree (6-way multifurcation)
+                is_binary: false,
                 max_depth: 1,
             },
         ),
@@ -3438,7 +3887,7 @@ fn test_tree_topology_and_structure_validation() {
                 tip_count: 5,
                 internal_count: 3,
                 total_count: 8,
-                is_binary: false, // POLYTOMY: One internal node has 3 children (trifurcation)
+                is_binary: false,
                 max_depth: 2,
             },
         ),
@@ -3459,10 +3908,16 @@ fn test_tree_topology_and_structure_validation() {
     }
 }
 
+/// Tests tree height calculation and tip-to-root distance analysis.
+///
+/// **Input:** Trees with various branch length patterns (equal, different, nested, ultrametric)
+/// **Output:** Accurate tree height and individual tip distance calculations
+/// **Rationale:** Validates phylogenetic distance calculations essential for evolutionary analysis
+///
+/// Tests height calculation, tip distance computation, ultrametric validation, and nested tree analysis.
 #[test]
 fn test_tree_height_calculation_and_tip_distances() {
     let test_cases = vec![
-        // Trees with branch lengths for height calculation
         ("Equal branch lengths", "(A:1.0,B:1.0);", 1.0, vec![1.0, 1.0]),
         ("Different tip distances", "(A:0.5,B:1.5);", 1.5, vec![0.5, 1.5]),
         (
@@ -3494,7 +3949,6 @@ fn test_tree_height_calculation_and_tip_distances() {
 
         let tree = &trees[0];
 
-        // Calculate tree height (maximum distance from root to any tip)
         let actual_height = calculate_tree_height(tree);
         assert!(
             (actual_height - expected_height).abs() < 1e-6,
@@ -3504,7 +3958,6 @@ fn test_tree_height_calculation_and_tip_distances() {
             actual_height
         );
 
-        // Check tip distances
         let tip_distances = calculate_tip_distances(tree);
         assert_eq!(
             tip_distances.len(),
@@ -3533,17 +3986,22 @@ fn test_tree_height_calculation_and_tip_distances() {
     }
 }
 
+/// Tests tree rooting status detection using structural and annotation-based criteria.
+///
+/// **Input:** Trees with various rooting patterns and Rich NEWICK rooting annotations
+/// **Output:** Correct rooting status identification (rooted/unrooted) based on topology
+/// **Rationale:** Ensures accurate rooting detection essential for phylogenetic interpretation
+///
+/// Tests structural rooting detection, Rich NEWICK annotations, and rooting status validation.
 #[test]
 fn test_tree_rooting_status_detection() {
     let test_cases = vec![
-        // Test rooting detection
-        ("Unrooted 3-tip", "(A,B,C);", false, 3), // Unrooted: root has 3 children
-        ("Unrooted 4-tip", "(A,B,C,D);", false, 4), // Unrooted: root has 4 children
-        ("Rooted binary", "((A,B),(C,D));", true, 4), // Rooted: root has 2 children
-        ("Rooted asymmetric", "(A,(B,C));", true, 3), // Rooted: root has 2 children
-        // Rich NEWICK rooting annotations
+        ("Unrooted 3-tip", "(A,B,C);", false, 3),
+        ("Unrooted 4-tip", "(A,B,C,D);", false, 4),
+        ("Rooted binary", "((A,B),(C,D));", true, 4),
+        ("Rooted asymmetric", "(A,(B,C));", true, 3),
         ("[&U] unrooted", "[&U](A,B,C);", false, 3),
-        ("[&R] rooted", "[&R](A,B,C);", true, 3), // Forced rooted
+        ("[&R] rooted", "[&R](A,B,C);", true, 3),
     ];
 
     for (name, newick_str, expected_rooted, expected_tips) in test_cases {
@@ -3562,7 +4020,6 @@ fn test_tree_rooting_status_detection() {
             tree.tip_count_all()
         );
 
-        // Check rooting status
         let is_rooted = tree.is_rooted();
         assert_eq!(
             is_rooted, expected_rooted,
@@ -3574,6 +4031,13 @@ fn test_tree_rooting_status_detection() {
     }
 }
 
+/// Tests comprehensive branch length analysis including statistics and properties.
+///
+/// **Input:** Trees with various branch length patterns (none, all, partial, zero, complex)
+/// **Output:** Accurate branch length statistics (min, max, total, presence indicators)
+/// **Rationale:** Validates branch length analysis essential for evolutionary distance calculations
+///
+/// Tests branch length presence detection, statistical analysis, edge cases, and complex tree patterns.
 #[test]
 fn test_branch_length_analysis_and_properties() {
     let test_cases = vec![
@@ -3663,7 +4127,7 @@ fn test_branch_length_analysis_and_properties() {
                     actual
                 );
             }
-            (None, None) => {} // Both None, OK
+            (None, None) => {}
             _ => panic!("min_length option mismatch for {}", name),
         }
 
@@ -3696,15 +4160,22 @@ fn test_branch_length_analysis_and_properties() {
     }
 }
 
+/// Tests node labeling analysis including tip and internal node label counting.
+///
+/// **Input:** Trees with various labeling patterns (none, tips only, mixed, quoted, with attributes)
+/// **Output:** Accurate counts of labeled tip nodes and internal nodes
+/// **Rationale:** Validates node labeling analysis for phylogenetic tree annotation and identification
+///
+/// Tests label presence detection, quoted label handling, attribute interaction, and comprehensive labeling patterns.
 #[test]
 fn test_node_labeling_and_property_analysis() {
     let test_cases = vec![
-        ("No labels", "(,,);", 0, 0), // No tip or internal labels
-        ("Tip labels only", "(A,B,C);", 3, 0), // 3 tip labels, 0 internal
-        ("All labels", "(A,B,C)Root;", 3, 1), // 3 tips + 1 internal
-        ("Mixed labels", "((A,B)Internal,C);", 3, 1), // 3 tips + 1 internal
-        ("Quoted labels", "('Taxon A','Taxon B');", 2, 0), // 2 quoted tip labels
-        ("Labels with attributes", "(A[&color=red],B[&type=mammal]);", 2, 0), // Tips with attributes
+        ("No labels", "(,,);", 0, 0),
+        ("Tip labels only", "(A,B,C);", 3, 0),
+        ("All labels", "(A,B,C)Root;", 3, 1),
+        ("Mixed labels", "((A,B)Internal,C);", 3, 1),
+        ("Quoted labels", "('Taxon A','Taxon B');", 2, 0),
+        ("Labels with attributes", "(A[&color=red],B[&type=mammal]);", 2, 0),
     ];
 
     for (name, newick_str, expected_tip_labels, expected_internal_labels) in
@@ -3716,7 +4187,6 @@ fn test_node_labeling_and_property_analysis() {
 
         let tree = &trees[0];
 
-        // Count tip labels
         let tip_label_count = tree
             .tip_node_ids_all()
             .iter()
@@ -3733,12 +4203,11 @@ fn test_node_labeling_and_property_analysis() {
             name, expected_tip_labels, tip_label_count
         );
 
-        // Count internal node labels
         let internal_label_count = tree
             .node_ids_all()
             .iter()
             .filter(|&&id| {
-                !tree.is_tip(&id)
+                !tree.is_tip(id)
                     && tree
                         .node(Some(id))
                         .and_then(dendros::Node::node_label)
@@ -3759,9 +4228,15 @@ fn test_node_labeling_and_property_analysis() {
     }
 }
 
+/// Tests NEXUS tree analysis with translation table integration and structural validation.
+///
+/// **Input:** NEXUS file with translation table mapping numeric IDs to long species names
+/// **Output:** Successfully analyzed trees with translated labels and correct structural properties
+/// **Rationale:** Validates integration of NEXUS translation tables with tree analysis functions
+///
+/// Tests translation table application, tree height calculation, topology validation, and label verification.
 #[test]
 fn test_nexus_tree_analysis_with_translation_tables() {
-    // Test NEXUS-specific validation including translate table effects
     let nexus_content = r#"
 #NEXUS
 
@@ -3782,11 +4257,9 @@ End;
     let result =
         parse_nexus_advanced(nexus_content).expect("Should parse successfully");
 
-    // Test symmetric tree
     let symmetric_tree =
         result.tree("symmetric").expect("Should have symmetric tree");
 
-    // Validate topology
     assert_eq!(
         symmetric_tree.tip_count_all(),
         4,
@@ -3799,11 +4272,9 @@ End;
     );
     assert!(symmetric_tree.is_rooted(), "Symmetric tree should be rooted");
 
-    // Validate height (should be 0.3 for both sides)
     let height = calculate_tree_height(symmetric_tree);
     assert!((height - 0.3).abs() < 1e-6, "Symmetric tree height should be 0.3");
 
-    // Validate that all tips have translated names
     let tip_labels: Vec<String> = symmetric_tree
         .tip_node_ids_all()
         .iter()
@@ -3821,11 +4292,9 @@ End;
         );
     }
 
-    // Test asymmetric tree
     let asymmetric_tree =
         result.tree("asymmetric").expect("Should have asymmetric tree");
 
-    // Validate different structure
     assert_eq!(
         asymmetric_tree.tip_count_all(),
         4,
@@ -3837,7 +4306,6 @@ End;
         "Asymmetric tree should have 7 total nodes"
     );
 
-    // Height should be 0.4 (longest path: 1 -> root = 0.4)
     let asym_height = calculate_tree_height(asymmetric_tree);
     assert!(
         (asym_height - 0.4).abs() < 1e-6,
@@ -3911,7 +4379,7 @@ fn calculate_tree_height(tree: &Tree) -> f64 {
 }
 
 fn calculate_node_height(tree: &Tree, node_id: dendros::NodeId) -> f64 {
-    let children = tree.children(&node_id);
+    let children = tree.children(node_id);
     if children.is_empty() {
         // Leaf node
         0.0
@@ -3922,7 +4390,7 @@ fn calculate_node_height(tree: &Tree, node_id: dendros::NodeId) -> f64 {
             .map(|child| {
                 let child_id = child.node_id().expect("Child should have ID");
                 let branch_len = child.branch_length().unwrap_or(0.0);
-                calculate_node_height(tree, *child_id) + branch_len
+                calculate_node_height(tree, child_id) + branch_len
             })
             .fold(0.0, f64::max)
     }
@@ -3942,11 +4410,11 @@ fn calculate_distance_to_root(tree: &Tree, node_id: dendros::NodeId) -> f64 {
     let mut current_id = node_id;
     let mut total_distance = 0.0;
 
-    while let Some(parent_id) = tree.parent_id(&current_id) {
+    while let Some(parent_id) = tree.parent_id(current_id) {
         if let Some(node) = tree.node(Some(current_id)) {
             total_distance += node.branch_length().unwrap_or(0.0);
         }
-        current_id = *parent_id;
+        current_id = parent_id;
     }
 
     total_distance
@@ -3962,7 +4430,7 @@ fn calculate_node_depth(
     node_id: dendros::NodeId,
     current_depth: usize,
 ) -> usize {
-    let children = tree.children(&node_id);
+    let children = tree.children(node_id);
     if children.is_empty() {
         current_depth
     } else {
@@ -3970,7 +4438,7 @@ fn calculate_node_depth(
             .iter()
             .map(|child| {
                 let child_id = child.node_id().expect("Child should have ID");
-                calculate_node_depth(tree, *child_id, current_depth + 1)
+                calculate_node_depth(tree, child_id, current_depth + 1)
             })
             .max()
             .unwrap_or(current_depth)

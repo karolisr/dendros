@@ -1,7 +1,10 @@
-use super::newick::{
-    extract_multiple_attribute_blocks, merge_attributes, remove_quotes,
-};
-use crate::{Attribute, Tree, parse_newick};
+use super::super::phylo::attribute::Attribute;
+use super::super::phylo::tree::Tree;
+use super::newick::attributes::extract_multiple_attribute_blocks;
+use super::newick::attributes::merge_attributes;
+use super::newick::attributes::remove_quotes;
+use super::newick::parse_newick;
+
 use std::collections::HashMap;
 
 pub fn parse_nexus(nexus_string: String) -> Option<Vec<Tree>> {
@@ -25,8 +28,8 @@ pub enum NexusError {
     MissingHeader,
     #[error("Parse error at line {line}: {message}.")]
     ParseError { line: usize, message: String },
-    #[error("Invalid block: {block}.")]
-    InvalidBlock { block: String },
+    // #[error("Invalid block: {block}.")]
+    // InvalidBlock { block: String },
     #[error("Unterminated block: {block}.")]
     UnterminatedBlock { block: String },
     #[error("Unexpected end of file.")]
@@ -56,7 +59,7 @@ impl Default for NexusFile {
 }
 
 impl NexusFile {
-    pub fn new() -> Self {
+    fn new() -> Self {
         Self {
             taxa: Vec::new(),
             trees: HashMap::new(),
@@ -97,11 +100,11 @@ pub struct Taxon {
 }
 
 impl Taxon {
-    pub fn new(label: String) -> Self {
+    fn new(label: String) -> Self {
         Self { label, attributes: HashMap::new() }
     }
 
-    pub fn new_with_attributes(
+    fn new_with_attributes(
         label: String,
         attributes: HashMap<String, Attribute>,
     ) -> Self {
@@ -109,7 +112,8 @@ impl Taxon {
     }
 }
 
-pub(crate) struct NexusParser {
+#[derive(Debug)]
+struct NexusParser {
     lines: Vec<String>,
     current_line: usize,
     nexus_file: NexusFile,
@@ -118,7 +122,7 @@ pub(crate) struct NexusParser {
 }
 
 impl NexusParser {
-    pub(crate) fn new(content: &str) -> Self {
+    fn new(content: &str) -> Self {
         let lines =
             content.lines().map(|line| line.trim().to_string()).collect();
 
@@ -131,7 +135,7 @@ impl NexusParser {
         }
     }
 
-    pub(crate) fn parse(&mut self) -> NexusResult<NexusFile> {
+    fn parse(&mut self) -> NexusResult<NexusFile> {
         if !self.has_nexus_header() {
             return Err(NexusError::MissingHeader);
         }
@@ -336,10 +340,7 @@ impl NexusParser {
         Ok(())
     }
 
-    fn parse_single_taxon(
-        &self,
-        taxon_str: &str,
-    ) -> NexusResult<crate::nexus::Taxon> {
+    fn parse_single_taxon(&self, taxon_str: &str) -> NexusResult<Taxon> {
         let trimmed = taxon_str.trim();
 
         // Check if there are attributes.
@@ -575,7 +576,7 @@ impl NexusParser {
                         if !taxon_attrs.is_empty() {
                             // Get current node attributes
                             let current_attributes =
-                                tree.node_attributes(node_id);
+                                tree.node_attributes(node_id).clone();
 
                             // Use the centralized merge_attributes function
                             let merged_attributes = merge_attributes(
@@ -725,4 +726,183 @@ fn remove_nexus_comments(line: &str) -> String {
     }
 
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_translate_simple() {
+        let nexus_content = r#"
+#NEXUS
+begin trees;
+translate
+  1 Taxon_A,
+  2 Taxon_B,
+  3 Taxon_C
+;
+tree test = (1,(2,3));
+end;
+    "#
+        .trim();
+
+        let result = parse_nexus_advanced(nexus_content);
+        assert!(result.is_ok());
+
+        let nexus_file = result.unwrap();
+
+        // Check translate table
+        assert!(nexus_file.translate_table.is_some());
+        let translate_table = nexus_file.translate_table.unwrap();
+        assert_eq!(translate_table.len(), 3);
+        assert_eq!(translate_table.get("1"), Some(&"Taxon A".to_string()));
+        assert_eq!(translate_table.get("2"), Some(&"Taxon B".to_string()));
+        assert_eq!(translate_table.get("3"), Some(&"Taxon C".to_string()));
+
+        // Check that tree was parsed
+        assert_eq!(nexus_file.trees.len(), 1);
+        assert!(nexus_file.trees.contains_key("test"));
+
+        // Check that taxon names were translated in the tree
+        let tree = nexus_file.trees.get("test").unwrap();
+        let mut leaf_labels = Vec::new();
+        for node_id in tree.tip_node_ids_all() {
+            if let Some(node) = tree.node(Some(node_id)) {
+                if let Some(label) = node.node_label() {
+                    leaf_labels.push(label.to_string());
+                }
+            }
+        }
+
+        assert!(leaf_labels.contains(&"Taxon A".to_string()));
+        assert!(leaf_labels.contains(&"Taxon B".to_string()));
+        assert!(leaf_labels.contains(&"Taxon C".to_string()));
+        assert!(!leaf_labels.contains(&"1".to_string()));
+        assert!(!leaf_labels.contains(&"2".to_string()));
+        assert!(!leaf_labels.contains(&"3".to_string()));
+    }
+
+    #[test]
+    fn test_translate_with_branch_lengths() {
+        let nexus_content = "
+        #NEXUS
+        begin trees;
+        translate
+        1 Species_One,
+        2 Species_Two
+        ;
+        tree with_lengths = (1:0.1,2:0.2);
+        end;
+    "
+        .trim();
+
+        let result = parse_nexus_advanced(nexus_content);
+        assert!(result.is_ok());
+
+        let nexus_file = result.unwrap();
+
+        // Check translate table
+        assert!(nexus_file.translate_table.is_some());
+        let translate_table = nexus_file.translate_table.unwrap();
+        assert_eq!(translate_table.len(), 2);
+
+        // Check tree
+        assert_eq!(nexus_file.trees.len(), 1);
+        let tree = nexus_file.trees.get("with_lengths").unwrap();
+
+        // Verify translation worked with branch lengths
+        let mut tip_labels = Vec::new();
+        for node_id in tree.tip_node_ids_all() {
+            if let Some(node) = tree.node(Some(node_id)) {
+                if let Some(label) = node.node_label() {
+                    tip_labels.push(label.to_string());
+                }
+            }
+        }
+
+        assert!(tip_labels.contains(&"Species One".to_string()));
+        assert!(tip_labels.contains(&"Species Two".to_string()));
+    }
+
+    #[test]
+    fn test_no_translate_table() {
+        let nexus_content = "
+        #NEXUS
+        begin trees;
+        tree simple = (A,(B,C));
+        end;
+    "
+        .trim();
+
+        let result = parse_nexus_advanced(nexus_content);
+        assert!(result.is_ok());
+
+        let nexus_file = result.unwrap();
+
+        // Should have no translate table
+        assert!(nexus_file.translate_table.is_none());
+
+        // Tree should still work normally
+        assert_eq!(nexus_file.trees.len(), 1);
+        let tree = nexus_file.trees.get("simple").unwrap();
+
+        let mut leaf_labels = Vec::new();
+        for node_id in tree.node_ids_all() {
+            if tree.is_tip(node_id) {
+                if let Some(node) = tree.node(Some(node_id)) {
+                    if let Some(label) = node.node_label() {
+                        leaf_labels.push(label.to_string());
+                    }
+                }
+            }
+        }
+
+        assert!(leaf_labels.contains(&"A".to_string()));
+        assert!(leaf_labels.contains(&"B".to_string()));
+        assert!(leaf_labels.contains(&"C".to_string()));
+    }
+
+    #[test]
+    fn test_mrbayes_format() {
+        // Test a small portion similar to the MrBayes format
+        let nexus_content = "
+        #NEXUS
+        begin trees;
+        translate
+        1 Chlamydomonas_reinhardtii__01,
+        2 Volvox_carteri__01,
+        3 Volvox_carteri__02,
+        4 Bryopsis_maxima__01,
+        5 Cycas_rumphii__01
+        ;
+        tree gen.1 = [&U] ((4:0.476,((1:0.171,2:0.164):0.257,3:0.079):0.251):0.083,5:0.086);
+        end;
+    "
+    .trim();
+
+        let result = parse_nexus_advanced(nexus_content);
+        assert!(result.is_ok());
+
+        let nexus_file = result.unwrap();
+
+        // Check translate table
+        assert!(nexus_file.translate_table.is_some());
+        let translate_table = nexus_file.translate_table.unwrap();
+        assert_eq!(translate_table.len(), 5);
+
+        // Check specific translations
+        assert_eq!(
+            translate_table.get("1"),
+            Some(&"Chlamydomonas reinhardtii  01".to_string())
+        );
+        assert_eq!(
+            translate_table.get("4"),
+            Some(&"Bryopsis maxima  01".to_string())
+        );
+
+        // Check tree exists and has correct structure
+        assert_eq!(nexus_file.trees.len(), 1);
+        assert!(nexus_file.trees.contains_key("gen.1"));
+    }
 }

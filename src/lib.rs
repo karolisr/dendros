@@ -14,16 +14,27 @@
 // #![allow(clippy::needless_range_loop)]
 // -------------------------------------
 
-mod newick;
-mod nexus;
+mod parsers;
 mod phylo;
 
-pub use newick::{
-    extract_nhx_content, is_nhx_format, parse_newick, parse_nhx_attributes,
-    write_newick,
-};
-pub use nexus::{NexusError, parse_nexus, parse_nexus_advanced};
-pub use phylo::{
-    Attribute, AttributeType, AttributeValue, AttributeValueType, Edge,
-    LttPoint, Node, NodeId, NodeType, Tree, TreeError, TreeFloat, TreeInt, ltt,
-};
+pub type TreeFloat = f64;
+pub type TreeInt = i64;
+
+pub use parsers::newick::parse_newick;
+pub use parsers::newick::write_newick;
+pub use parsers::nexus::NexusError;
+pub use parsers::nexus::NexusFile;
+pub use parsers::nexus::parse_nexus;
+pub use parsers::nexus::parse_nexus_advanced;
+pub use parsers::parse_trees;
+pub use phylo::attribute::Attribute;
+pub use phylo::attribute::AttributeType;
+pub use phylo::attribute::AttributeValue;
+pub use phylo::attribute::AttributeValueType;
+pub use phylo::edges::Edge;
+pub use phylo::ltt::LttPoint;
+pub use phylo::ltt::ltt;
+pub use phylo::node::Node;
+pub use phylo::node::NodeId;
+pub use phylo::tree::Tree;
+pub use phylo::tree::TreeError;

@@ -1,8 +1,9 @@
-use super::{TreeFloat, TreeInt};
-use std::{
-    fmt::{Debug, Display},
-    str::FromStr,
-};
+use crate::TreeFloat;
+use crate::TreeInt;
+
+use std::fmt::Debug;
+use std::fmt::Display;
+use std::str::FromStr;
 
 // =============================================================================
 // Type definitions
@@ -226,7 +227,7 @@ impl Attribute {
     }
 
     /// Get the unified type for two compatible attribute value types.
-    fn get_unified_value_type(
+    pub fn get_unified_value_type(
         type1: &AttributeValueType,
         type2: &AttributeValueType,
     ) -> AttributeValueType {

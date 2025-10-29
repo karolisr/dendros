@@ -1,8 +1,11 @@
 use super::Attribute;
-use super::nhx::{extract_nhx_content, is_nhx_format, parse_nhx_attributes};
+use super::nhx::extract_nhx_content;
+use super::nhx::is_nhx_format;
+use super::nhx::parse_nhx_attributes;
+
 use std::collections::HashMap;
 
-pub fn remove_quotes(s: &str) -> String {
+pub(crate) fn remove_quotes(s: &str) -> String {
     let s = s.trim();
 
     if (s.starts_with('\'') && s.ends_with('\''))
@@ -19,8 +22,8 @@ pub fn remove_quotes(s: &str) -> String {
         }
     }
 
-    // - Unquoted strings: convert underscores to spaces.
-    // - Quoted strings: preserve underscores.
+    // Unquoted strings: convert underscores to spaces.
+    //   Quoted strings: preserve underscores.
     if !s.starts_with('\'') && !s.starts_with('"') {
         s.replace('_', " ")
     } else {
@@ -158,7 +161,7 @@ fn find_matching_bracket(s: &str) -> Option<usize> {
 /// Parses comma-separated attributes.
 ///
 /// Handles `key=value` pairs, simple values, and NHX format.
-pub fn split_comma_separated_attributes(s: &str) -> HashMap<String, Attribute> {
+fn split_comma_separated_attributes(s: &str) -> HashMap<String, Attribute> {
     let mut result: HashMap<String, Attribute> = HashMap::new();
 
     if let Some(nhx_content) = extract_nhx_content(s) {
@@ -312,19 +315,6 @@ pub(crate) fn split_respecting_brackets(s: &str, delimiter: char) -> Vec<&str> {
 ///
 /// `None` if both sources are empty, otherwise `Some(HashMap)` with merged attributes.
 ///
-/// # Examples
-///
-/// ```ignore
-/// // Rich NEWICK + bracket attributes
-/// let rich = HashMap::from([("bootstrap".to_string(), Attribute::Integer(95))]);
-/// let bracket = Some(HashMap::from([("support".to_string(), Attribute::Decimal(0.95))]));
-/// let merged = combine_attributes(rich, bracket);
-///
-/// // Taxa attributes + node attributes
-/// let taxa_attrs = HashMap::from([("location".to_string(), Attribute::Text("USA".into()))]);
-/// let node_attrs = Some(HashMap::from([("age".to_string(), Attribute::Decimal(10.5))]));
-/// let merged = combine_attributes(taxa_attrs, node_attrs);
-/// ```
 pub(crate) fn combine_attributes(
     rich_attributes: HashMap<String, Attribute>,
     bracket_attributes: Option<HashMap<String, Attribute>>,

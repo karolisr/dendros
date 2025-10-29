@@ -1,4 +1,6 @@
-use super::{Edge, TreeFloat};
+use super::edges::Edge;
+use crate::TreeFloat;
+
 use std::iter::zip;
 
 #[derive(Debug, Default)]

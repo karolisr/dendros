@@ -1,5 +1,5 @@
 /// Pre-validates NEWICK formatted string.
-pub(super) fn is_valid_newick_structure(s: &str) -> bool {
+pub(crate) fn is_valid_newick_structure(s: &str) -> bool {
     let s = s.trim();
 
     // Must end with semicolon.

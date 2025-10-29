@@ -1,15 +1,20 @@
-use super::Edge;
-use super::TreeFloat;
-use super::attribute::{Attribute, AttributeType};
-use super::flatten_tree;
-use super::node::{Node, NodeId, NodeType};
+use super::attribute::Attribute;
+use super::attribute::AttributeType;
+use super::edges::Edge;
+use super::edges::prepare_edges;
+use super::node::Node;
+use super::node::NodeId;
+use super::node::NodeType;
+use crate::TreeFloat;
+
 use rayon::prelude::*;
-use rustc_hash::FxHashSet;
 use slotmap::SlotMap;
+use thiserror::Error;
+
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::fmt::Display;
 use std::sync::Arc;
-use thiserror::Error;
 
 #[derive(Debug, Default, Clone)]
 pub struct Tree {
@@ -38,7 +43,7 @@ pub enum TreeError {
     AttributeTypeMismatch(String, String),
 }
 
-impl Tree {
+impl<'a> Tree {
     // =========================================================================
     // Construction & Validation
     // =========================================================================
@@ -47,7 +52,7 @@ impl Tree {
         Self::default()
     }
 
-    pub fn add_new_node<'a>(
+    pub fn add_new_node(
         &mut self,
         name: Option<impl Into<&'a str>>,
         branch_length: Option<TreeFloat>,
@@ -59,7 +64,7 @@ impl Tree {
         self.add_node(node, parent_node_id)
     }
 
-    pub fn add_node(
+    pub(crate) fn add_node(
         &mut self,
         node: Node,
         parent_node_id: Option<NodeId>,
@@ -72,7 +77,7 @@ impl Tree {
         }
     }
 
-    pub fn add_nodes(
+    pub(crate) fn add_nodes(
         &mut self,
         nodes: impl Into<Vec<Node>>,
         parent_node_id: Option<NodeId>,
@@ -174,15 +179,15 @@ impl Tree {
     /// not validate or modify other aspects of tree topology.
     ///
     fn remove_knuckle(&mut self, knuckle_node_id: NodeId) {
-        let putative_knuckle_child_node_ids = self.child_ids(&knuckle_node_id);
+        let putative_knuckle_child_node_ids = self.child_ids(knuckle_node_id);
 
         // Check if this node is a knuckle.
         if putative_knuckle_child_node_ids.len() == 1 {
             let knuckle_branch_length_opt = self.branch_length(knuckle_node_id);
-            let knuckle_node_label_opt = self.label(&knuckle_node_id);
+            let knuckle_node_label_opt = self.label(knuckle_node_id);
             let child_node_id = putative_knuckle_child_node_ids[0];
             let child_branch_length_opt = self.branch_length(child_node_id);
-            let child_node_label_opt = self.label(&child_node_id);
+            let child_node_label_opt = self.label(child_node_id);
 
             if let Some(child) = self.node_mut(Some(child_node_id)) {
                 // Adds knuckle's branch length to the child's branch length.
@@ -258,7 +263,7 @@ impl Tree {
         for node in self.nodes.values_mut() {
             match node.set_node_type() {
                 NodeType::Unset => {
-                    unset_node_ids.push(*node.node_id().unwrap());
+                    unset_node_ids.push(node.node_id().unwrap());
                     count_of_unset += 1;
                 }
                 NodeType::Tip => count_of_tip += 1,
@@ -266,13 +271,13 @@ impl Tree {
                 NodeType::FirstNode => {
                     count_of_first += 1;
                     if let Some(node_id) = node.node_id() {
-                        self.first_node_id = Some(*node_id);
+                        self.first_node_id = Some(node_id);
                     }
                 }
                 NodeType::Root => {
                     count_of_root += 1;
                     if let Some(node_id) = node.node_id() {
-                        self.first_node_id = Some(*node_id);
+                        self.first_node_id = Some(node_id);
                     }
                 }
             };
@@ -302,7 +307,7 @@ impl Tree {
         // account for something.
         for node_id in unset_node_ids {
             let node = self.node(Some(node_id));
-            let child_nodes = self.children(&node_id);
+            let child_nodes = self.children(node_id);
             println!("------        Node:\n{node:#?}");
             println!("------ Child Nodes:\n{child_nodes:#?}");
         }
@@ -354,14 +359,14 @@ impl Tree {
 
             for (key, attr) in node_attrs {
                 node_attribute_types
-                    .entry(key)
+                    .entry(key.to_string())
                     .or_default()
                     .push(attr.get_type());
             }
 
             for (key, attr) in branch_attrs {
                 branch_attribute_types
-                    .entry(key)
+                    .entry(key.to_string())
                     .or_default()
                     .push(attr.get_type());
             }
@@ -388,26 +393,36 @@ impl Tree {
 
         // Third pass: convert attributes to unified types.
         for node in self.nodes.values_mut() {
-            let mut updated_node_attrs = HashMap::new();
-            let mut updated_branch_attrs = HashMap::new();
+            let mut updated_node_attrs: HashMap<String, Attribute> =
+                HashMap::new();
+            let mut updated_branch_attrs: HashMap<String, Attribute> =
+                HashMap::new();
 
             for (key, attr) in node.node_attributes() {
-                if let Some(target_type) = unified_node_types.get(&key) {
-                    let unified_attr =
-                        Self::convert_attribute_to_type(attr, target_type)?;
-                    let _ = updated_node_attrs.insert(key, unified_attr);
+                if let Some(target_type) = unified_node_types.get(key) {
+                    let unified_attr = Self::convert_attribute_to_type(
+                        attr.clone(),
+                        target_type,
+                    )?;
+                    let _ = updated_node_attrs
+                        .insert(key.to_string(), unified_attr);
                 } else {
-                    let _ = updated_node_attrs.insert(key, attr);
+                    let _ = updated_node_attrs
+                        .insert(key.to_string(), attr.clone());
                 }
             }
 
             for (key, attr) in node.branch_attributes() {
-                if let Some(target_type) = unified_branch_types.get(&key) {
-                    let unified_attr =
-                        Self::convert_attribute_to_type(attr, target_type)?;
-                    let _ = updated_branch_attrs.insert(key, unified_attr);
+                if let Some(target_type) = unified_branch_types.get(key) {
+                    let unified_attr = Self::convert_attribute_to_type(
+                        attr.clone(),
+                        target_type,
+                    )?;
+                    let _ = updated_branch_attrs
+                        .insert(key.to_string(), unified_attr);
                 } else {
-                    let _ = updated_branch_attrs.insert(key, attr);
+                    let _ = updated_branch_attrs
+                        .insert(key.to_string(), attr.clone());
                 }
             }
 
@@ -416,44 +431,6 @@ impl Tree {
         }
 
         Ok(())
-    }
-
-    /// Gets the unified type for a specific attribute key across all nodes.
-    fn get_unified_type_for_key(
-        &self,
-        key: &str,
-        is_branch: bool,
-    ) -> Option<AttributeType> {
-        let mut attribute_types: Vec<AttributeType> = Vec::new();
-
-        for node in self.nodes.values() {
-            let attrs = if is_branch {
-                node.branch_attributes()
-            } else {
-                node.node_attributes()
-            };
-
-            if let Some(attr) = attrs.get(key) {
-                attribute_types.push(attr.get_type());
-            }
-        }
-
-        if attribute_types.is_empty() {
-            return None;
-        }
-
-        let mut unified_type = attribute_types[0].clone();
-        for current_type in attribute_types.iter().skip(1) {
-            if let Some(new_unified) =
-                Attribute::get_unified_type(&unified_type, current_type)
-            {
-                unified_type = new_unified;
-            } else {
-                return None;
-            }
-        }
-
-        Some(unified_type)
     }
 
     /// Unifies a list of attribute types into a single consistent type.
@@ -555,15 +532,13 @@ impl Tree {
                 heights = tip_nodes
                     .par_iter()
                     .map(|&node_id| {
-                        (node_id, self.distance(&first_node_id, &node_id))
+                        (node_id, self.distance(first_node_id, node_id))
                     })
                     .collect();
             } else {
                 for &node_id in &tip_nodes {
-                    heights.push((
-                        node_id,
-                        self.distance(&first_node_id, &node_id),
-                    ));
+                    heights
+                        .push((node_id, self.distance(first_node_id, node_id)));
                 }
             }
 
@@ -598,20 +573,20 @@ impl Tree {
     }
 
     pub fn height(&self) -> TreeFloat {
-        if let Some(id) = &self.first_node_id {
+        if let Some(id) = self.first_node_id {
             let tip_ids = self.tip_node_ids_all();
 
             // Use parallel processing for larger trees
             if tip_ids.len() > 100 {
                 tip_ids
                     .par_iter()
-                    .map(|right| self.distance(id, right))
-                    .reduce(|| 0.0, f64::max)
+                    .map(|right| self.distance(id, *right))
+                    .reduce(|| 0.0, TreeFloat::max)
             } else {
                 tip_ids
                     .iter()
-                    .map(|right| self.distance(id, right))
-                    .fold(0.0, f64::max)
+                    .map(|right| self.distance(id, *right))
+                    .fold(0.0, TreeFloat::max)
             }
         } else {
             0.0
@@ -620,8 +595,8 @@ impl Tree {
 
     pub fn distance(
         &self,
-        left_node_id: &NodeId,
-        right_node_id: &NodeId,
+        left_node_id: NodeId,
+        right_node_id: NodeId,
     ) -> TreeFloat {
         if left_node_id == right_node_id {
             return 0.0;
@@ -630,7 +605,7 @@ impl Tree {
         // For now, keep the original implementation as memoization would require &mut self
         // TODO: Consider using RefCell for interior mutability if memoization is needed
         let mut total_distance: TreeFloat = 0.0;
-        total_distance += self.branch_length(*right_node_id).unwrap_or(0.0);
+        total_distance += self.branch_length(right_node_id).unwrap_or(0.0);
 
         if let Some(parent_node_id) = self.parent_id(right_node_id) {
             if parent_node_id != left_node_id {
@@ -681,7 +656,7 @@ impl Tree {
         self.nodes.keys().collect()
     }
 
-    pub fn node_id_by_label<'a>(
+    pub fn node_id_by_label(
         &self,
         label: impl Into<&'a str>,
     ) -> Option<NodeId> {
@@ -695,8 +670,18 @@ impl Tree {
         })
     }
 
-    pub fn label(&self, node_id: &NodeId) -> Option<Arc<str>> {
-        self.nodes[*node_id].node_label()
+    pub fn label(&self, node_id: NodeId) -> Option<Arc<str>> {
+        self.nodes[node_id].node_label()
+    }
+
+    pub fn branch_length(&self, node_id: NodeId) -> Option<TreeFloat> {
+        if self.has_branch_lengths {
+            self.nodes[node_id].branch_length()
+        } else if Some(node_id) == self.first_node_id() {
+            None
+        } else {
+            Some(1e0)
+        }
     }
 
     // =========================================================================
@@ -705,8 +690,8 @@ impl Tree {
 
     pub fn path(
         &self,
-        right_node_id: &NodeId,
-        left_node_id: &NodeId,
+        right_node_id: NodeId,
+        left_node_id: NodeId,
     ) -> Vec<NodeId> {
         if left_node_id == right_node_id {
             return Vec::new();
@@ -719,30 +704,30 @@ impl Tree {
             if parent_node_id == left_node_id {
                 break;
             }
-            path.push(*parent_node_id);
+            path.push(parent_node_id);
             current_node_id = parent_node_id;
         }
 
         path
     }
 
-    pub fn parent_id(&self, node_id: &NodeId) -> Option<&NodeId> {
-        self.nodes[*node_id].parent_id()
+    pub fn parent_id(&self, node_id: NodeId) -> Option<NodeId> {
+        self.nodes[node_id].parent_id()
     }
 
-    pub fn child_ids(&self, node_id: &NodeId) -> &[NodeId] {
-        self.nodes[*node_id].child_ids()
+    pub fn child_ids(&self, node_id: NodeId) -> &[NodeId] {
+        self.nodes[node_id].child_ids()
     }
 
-    pub fn first_child_id(&self, node_id: &NodeId) -> Option<&NodeId> {
+    pub fn first_child_id(&self, node_id: NodeId) -> Option<&NodeId> {
         self.child_ids(node_id).first()
     }
 
-    pub fn last_child_id(&self, node_id: &NodeId) -> Option<&NodeId> {
+    pub fn last_child_id(&self, node_id: NodeId) -> Option<&NodeId> {
         self.child_ids(node_id).last()
     }
 
-    pub fn children(&self, node_id: &NodeId) -> Vec<&Node> {
+    pub fn children(&self, node_id: NodeId) -> Vec<&Node> {
         let mut result = Vec::new();
         for &child_id in self.child_ids(node_id) {
             let child_node = &self.nodes[child_id];
@@ -751,54 +736,54 @@ impl Tree {
         result
     }
 
-    pub fn child_count(&self, node_id: &NodeId) -> usize {
-        self.nodes[*node_id].child_node_count()
+    pub fn child_count(&self, node_id: NodeId) -> usize {
+        self.nodes[node_id].child_node_count()
     }
 
-    pub fn child_count_recursive(&self, node_id: &NodeId) -> usize {
+    pub fn child_count_recursive(&self, node_id: NodeId) -> usize {
         let children = self.child_ids(node_id);
         children.len()
             + children
                 .iter()
-                .map(|child_id| self.child_count_recursive(child_id))
+                .map(|&child_id| self.child_count_recursive(child_id))
                 .sum::<usize>()
     }
 
-    pub fn is_tip(&self, node_id: &NodeId) -> bool {
-        self.nodes[*node_id].is_tip()
+    pub fn is_tip(&self, node_id: NodeId) -> bool {
+        self.nodes[node_id].is_tip()
     }
 
-    pub fn tip_node_ids(&self, node_id: &NodeId) -> Vec<NodeId> {
+    pub fn tip_node_ids(&self, node_id: NodeId) -> Vec<NodeId> {
         let mut result = Vec::new();
-        self.collect_tip_ids_recursive(*node_id, &mut result);
+        self.tip_node_ids_recursive(node_id, &mut result);
         result
     }
 
-    fn collect_tip_ids_recursive(
+    pub fn tip_node_ids_recursive(
         &self,
         node_id: NodeId,
         result: &mut Vec<NodeId>,
     ) {
-        if self.is_tip(&node_id) {
+        if self.is_tip(node_id) {
             result.push(node_id);
         } else {
-            for child_id in self.child_ids(&node_id) {
-                self.collect_tip_ids_recursive(*child_id, result);
+            for child_id in self.child_ids(node_id) {
+                self.tip_node_ids_recursive(*child_id, result);
             }
         }
     }
 
     pub fn tip_node_ids_all(&self) -> Vec<NodeId> {
-        if let Some(id) = self.first_node_id {
-            self.tip_node_ids(&id)
+        if let Some(first_node_id) = self.first_node_id {
+            self.tip_node_ids(first_node_id)
         } else {
             Vec::new()
         }
     }
 
-    pub fn tip_count_recursive(&self, node_id: &NodeId) -> usize {
+    pub fn tip_count_recursive(&self, node_id: NodeId) -> usize {
         let mut count: usize = 0;
-        for child_id in self.child_ids(node_id) {
+        for &child_id in self.child_ids(node_id) {
             if !self.is_tip(child_id) {
                 count += self.tip_count_recursive(child_id);
             } else {
@@ -808,7 +793,7 @@ impl Tree {
         count
     }
 
-    pub fn tip_count(&self, node_id: &NodeId) -> usize {
+    pub fn tip_count(&self, node_id: NodeId) -> usize {
         let mut count: usize = 0;
         for child_node in self.children(node_id) {
             if child_node.is_tip() {
@@ -818,32 +803,26 @@ impl Tree {
         count
     }
 
-    pub fn bounding_tip_ids_for_clade<'a>(
+    pub fn bounding_tip_ids_for_clade(
         &'a self,
-        node_id: &'a NodeId,
-    ) -> (&'a NodeId, &'a NodeId) {
+        node_id: NodeId,
+    ) -> (NodeId, NodeId) {
         (
             self.first_tip_id_for_clade(node_id),
             self.last_tip_id_for_clade(node_id),
         )
     }
 
-    pub fn first_tip_id_for_clade<'a>(
-        &'a self,
-        node_id: &'a NodeId,
-    ) -> &'a NodeId {
+    pub fn first_tip_id_for_clade(&'a self, node_id: NodeId) -> NodeId {
         match self.first_child_id(node_id) {
-            Some(child_id) => self.first_tip_id_for_clade(child_id),
+            Some(child_id) => self.first_tip_id_for_clade(*child_id),
             None => node_id,
         }
     }
 
-    pub fn last_tip_id_for_clade<'a>(
-        &'a self,
-        node_id: &'a NodeId,
-    ) -> &'a NodeId {
+    pub fn last_tip_id_for_clade(&'a self, node_id: NodeId) -> NodeId {
         match self.last_child_id(node_id) {
-            Some(child_id) => self.last_tip_id_for_clade(child_id),
+            Some(child_id) => self.last_tip_id_for_clade(*child_id),
             None => node_id,
         }
     }
@@ -859,14 +838,14 @@ impl Tree {
         false
     }
 
-    pub fn is_valid_potential_outgroup_node(&self, node_id: &NodeId) -> bool {
-        if let Some(first_node_id) = &self.first_node_id {
+    pub fn is_valid_potential_outgroup_node(&self, node_id: NodeId) -> bool {
+        if let Some(first_node_id) = self.first_node_id {
             if node_id == first_node_id {
                 return false;
             }
             if self.is_rooted() {
                 let bad_outgroups = self.child_ids(first_node_id);
-                if bad_outgroups.contains(node_id) {
+                if bad_outgroups.contains(&node_id) {
                     return false;
                 }
             }
@@ -875,7 +854,7 @@ impl Tree {
     }
 
     pub fn root(&mut self, node_id: NodeId) -> Result<NodeId, TreeError> {
-        if !self.is_valid_potential_outgroup_node(&node_id) {
+        if !self.is_valid_potential_outgroup_node(node_id) {
             return Err(TreeError::InvalidOutgroupNode(node_id));
         }
 
@@ -887,13 +866,13 @@ impl Tree {
                 .ok()
                 .unwrap();
 
-            let path = self.path(&node_id, &left_node_id);
+            let path = self.path(node_id, left_node_id);
 
             let branch_length_new_outgroup: TreeFloat =
                 self.branch_length(node_id).unwrap_or_default() / 2e0;
 
             let branch_attributes_new_outgroup =
-                self.branch_attributes(node_id);
+                self.branch_attributes(node_id).clone();
 
             if self.has_branch_lengths {
                 self.nodes[node_id]
@@ -912,7 +891,7 @@ impl Tree {
                     self.branch_length(path_node_id).unwrap_or_default();
 
                 let temporary_branch_attributes =
-                    self.branch_attributes(path_node_id);
+                    self.branch_attributes(path_node_id).clone();
 
                 if self.has_branch_lengths {
                     self.nodes[path_node_id]
@@ -920,7 +899,7 @@ impl Tree {
                 }
 
                 self.nodes[path_node_id]
-                    .set_branch_attributes(previous_branch_attributes);
+                    .set_branch_attributes(previous_branch_attributes.clone());
 
                 self.nodes[previous_parent_node_id].add_child_id(path_node_id);
 
@@ -928,9 +907,9 @@ impl Tree {
                     .set_parent_id(Some(previous_parent_node_id));
 
                 self.nodes[path_node_id]
-                    .remove_child_id(&previous_parent_node_id);
+                    .remove_child_id(previous_parent_node_id);
 
-                self.nodes[path_node_id].remove_child_id(&node_id);
+                self.nodes[path_node_id].remove_child_id(node_id);
 
                 previous_branch_attributes = temporary_branch_attributes;
                 previous_branch_length = temporary_branch_length;
@@ -962,12 +941,12 @@ impl Tree {
             }
 
             self.nodes[new_last]
-                .set_branch_attributes(previous_branch_attributes);
+                .set_branch_attributes(previous_branch_attributes.clone());
 
             let node_id_to_ignore: NodeId =
                 if !path.is_empty() { path[path.len() - 1] } else { node_id };
 
-            let temporary_child_ids = self.child_ids(&left_node_id).to_vec();
+            let temporary_child_ids = self.child_ids(left_node_id).to_vec();
 
             for child_node_id in temporary_child_ids {
                 if child_node_id != node_id_to_ignore {
@@ -1043,12 +1022,12 @@ impl Tree {
     /// by the caller before calling this function.
     ///
     fn yank_node(&mut self, node_id: NodeId) {
-        let child_ids = self.child_ids(&node_id).to_vec();
+        let child_ids = self.child_ids(node_id).to_vec();
         if let Some(parent_node_id) = self.nodes[node_id].parent_id() {
-            let parent_node_id: NodeId = *parent_node_id;
+            let parent_node_id: NodeId = parent_node_id;
 
             if let Some(parent_node) = self.nodes.get_mut(parent_node_id) {
-                parent_node.remove_child_id(&node_id);
+                parent_node.remove_child_id(node_id);
 
                 for &child_id in &child_ids {
                     parent_node.add_child_id(child_id);
@@ -1134,7 +1113,7 @@ impl Tree {
 
         let mut receive_node_id: NodeId = source_node_id;
         if let Some(first_node_id) = self.first_node_id() {
-            for &other_id in self.child_ids(&first_node_id) {
+            for &other_id in self.child_ids(first_node_id) {
                 if other_id != source_node_id {
                     receive_node_id = other_id;
                     break;
@@ -1174,7 +1153,7 @@ impl Tree {
         {
             return None;
         }
-        let root_child_nodes = self.children(&self.first_node_id.unwrap());
+        let root_child_nodes = self.children(self.first_node_id.unwrap());
         let child_node_1 = root_child_nodes[0];
         let child_node_2 = root_child_nodes[1];
 
@@ -1209,22 +1188,22 @@ impl Tree {
             }
         }
 
-        node_to_drop.node_id().copied()
+        node_to_drop.node_id()
     }
 
     // =========================================================================
     // Edge Operations
     // =========================================================================
 
-    pub fn needs_edge_rebuild(&self) -> bool {
+    fn needs_edge_rebuild(&self) -> bool {
         self.edges.is_none()
     }
 
-    pub fn rebuild_edges(&mut self) {
+    fn rebuild_edges(&mut self) {
         if let Some(_) = self.first_node_id
             && self.needs_edge_rebuild()
         {
-            let mut edges = flatten_tree(self);
+            let mut edges = prepare_edges(self);
 
             for (edge_index, edge) in edges.iter_mut().enumerate() {
                 edge.edge_index = edge_index;
@@ -1245,14 +1224,14 @@ impl Tree {
 
     pub fn bounding_tip_edges_for_clade(
         &self,
-        node_id: &NodeId,
+        node_id: NodeId,
     ) -> Option<(&Edge, &Edge)> {
-        if !self.node_exists(Some(*node_id)) {
+        if !self.node_exists(Some(node_id)) {
             return None;
         }
 
         let edges = self.edges()?;
-        let (&tip_node_id_0, &tip_node_id_1) =
+        let (tip_node_id_0, tip_node_id_1) =
             self.bounding_tip_ids_for_clade(node_id);
         let start: &Edge =
             &edges[self.edge_index_for_node_id(tip_node_id_0)?];
@@ -1263,9 +1242,9 @@ impl Tree {
 
     pub fn bounding_edges_for_clade(
         &self,
-        node_id: &NodeId,
+        node_id: NodeId,
     ) -> Option<(Vec<Edge>, Vec<Edge>)> {
-        if !self.node_exists(Some(*node_id)) {
+        if !self.node_exists(Some(node_id)) {
             return None;
         }
 
@@ -1280,9 +1259,8 @@ impl Tree {
         let path_top = self.path(top_tip_node_id, node_id);
         let path_bottom = self.path(bottom_tip_node_id, node_id);
 
-        edges_top.push(
-            edges[self.edge_index_for_node_id(*top_tip_node_id)?].clone(),
-        );
+        edges_top
+            .push(edges[self.edge_index_for_node_id(top_tip_node_id)?].clone());
 
         for path_node_id in path_top {
             let edge = &edges[self.edge_index_for_node_id(path_node_id)?];
@@ -1295,7 +1273,7 @@ impl Tree {
         }
 
         edges_bottom.push(
-            edges[self.edge_index_for_node_id(*bottom_tip_node_id)?].clone(),
+            edges[self.edge_index_for_node_id(bottom_tip_node_id)?].clone(),
         );
 
         Some((edges_top, edges_bottom))
@@ -1322,7 +1300,7 @@ impl Tree {
     fn sort_nodes(&mut self, node_id: NodeId, reverse: bool) {
         let mut sorted_ids: Vec<NodeId> =
             self.nodes[node_id].child_ids().to_vec();
-        sorted_ids.par_sort_by_key(|c| self.child_count_recursive(c));
+        sorted_ids.par_sort_by_key(|&c| self.child_count_recursive(c));
         if reverse {
             sorted_ids.reverse();
         }
@@ -1337,26 +1315,24 @@ impl Tree {
     // =========================================================================
 
     pub fn branch_attributes(
-        &self,
+        &'a self,
         node_id: NodeId,
-    ) -> HashMap<String, Attribute> {
+    ) -> &'a HashMap<String, Attribute> {
         self.nodes[node_id].branch_attributes()
     }
 
     pub fn node_attributes(
-        &self,
+        &'a self,
         node_id: NodeId,
-    ) -> HashMap<String, Attribute> {
+    ) -> &'a HashMap<String, Attribute> {
         self.nodes[node_id].node_attributes()
     }
 
     pub fn branch_attribute_keys(&self) -> Vec<String> {
-        let mut result: FxHashSet<String> = FxHashSet::default();
+        let mut result: HashSet<String> = HashSet::default();
         for node in self.nodes.values() {
-            let attribute_keys: FxHashSet<String> = FxHashSet::from_iter(
-                self.branch_attributes(*node.node_id().unwrap())
-                    .keys()
-                    .cloned(),
+            let attribute_keys: HashSet<String> = HashSet::from_iter(
+                self.branch_attributes(node.node_id().unwrap()).keys().cloned(),
             );
             result.extend(attribute_keys);
         }
@@ -1364,24 +1340,14 @@ impl Tree {
     }
 
     pub fn node_attribute_keys(&self) -> Vec<String> {
-        let mut result: FxHashSet<String> = FxHashSet::default();
+        let mut result: HashSet<String> = HashSet::default();
         for node in self.nodes.values() {
-            let attribute_keys: FxHashSet<String> = FxHashSet::from_iter(
-                self.node_attributes(*node.node_id().unwrap()).keys().cloned(),
+            let attribute_keys: HashSet<String> = HashSet::from_iter(
+                self.node_attributes(node.node_id().unwrap()).keys().cloned(),
             );
             result.extend(attribute_keys);
         }
         result.into_iter().collect()
-    }
-
-    pub fn branch_length(&self, node_id: NodeId) -> Option<TreeFloat> {
-        if self.has_branch_lengths {
-            self.nodes[node_id].branch_length()
-        } else if Some(node_id) == self.first_node_id() {
-            None
-        } else {
-            Some(1e0)
-        }
     }
 
     // =========================================================================
@@ -1413,7 +1379,7 @@ impl Tree {
 
         let mut count = 0;
         for node in self.nodes.values_mut() {
-            let mut node_attrs = node.node_attributes();
+            let mut node_attrs = node.node_attributes().clone();
             if let Some(attr) = node_attrs.remove(old_key) {
                 let _ = node_attrs.insert(new_key.to_string(), attr);
                 node.set_node_attributes(node_attrs);
@@ -1449,7 +1415,7 @@ impl Tree {
 
         let mut count = 0;
         for node in self.nodes.values_mut() {
-            let mut branch_attrs = node.branch_attributes();
+            let mut branch_attrs = node.branch_attributes().clone();
             if let Some(attr) = branch_attrs.remove(old_key) {
                 let _ = branch_attrs.insert(new_key.to_string(), attr);
                 node.set_branch_attributes(branch_attrs);
@@ -1516,12 +1482,12 @@ impl Tree {
             };
 
             // Update the node's attribute.
-            let mut node_attrs = node.node_attributes();
+            let mut node_attrs = node.node_attributes().clone();
             let _ = node_attrs.insert(key.to_string(), converted_value);
             node.set_node_attributes(node_attrs);
         } else {
             // If no unified type exists, just update the attribute
-            let mut node_attrs = node.node_attributes();
+            let mut node_attrs = node.node_attributes().clone();
             let _ = node_attrs.insert(key.to_string(), new_value);
             node.set_node_attributes(node_attrs);
         }
@@ -1585,17 +1551,50 @@ impl Tree {
             };
 
             // Update the node's attribute
-            let mut branch_attrs = node.branch_attributes();
+            let mut branch_attrs = node.branch_attributes().clone();
             let _ = branch_attrs.insert(key.to_string(), converted_value);
             node.set_branch_attributes(branch_attrs);
         } else {
             // If no unified type exists, just update the attribute
-            let mut branch_attrs = node.branch_attributes();
+            let mut branch_attrs = node.branch_attributes().clone();
             let _ = branch_attrs.insert(key.to_string(), new_value);
             node.set_branch_attributes(branch_attrs);
         }
 
         Ok(())
+    }
+
+    /// Gets the unified type for a specific attribute key across all nodes.
+    fn get_unified_type_for_key(
+        &self,
+        key: &str,
+        is_branch: bool,
+    ) -> Option<AttributeType> {
+        let mut attribute_types: Vec<AttributeType> = Vec::new();
+        for node in self.nodes.values() {
+            let attrs = if is_branch {
+                node.branch_attributes()
+            } else {
+                node.node_attributes()
+            };
+            if let Some(attr) = attrs.get(key) {
+                attribute_types.push(attr.get_type());
+            }
+        }
+        if attribute_types.is_empty() {
+            return None;
+        }
+        let mut unified_type = attribute_types[0].clone();
+        for current_type in attribute_types.iter().skip(1) {
+            if let Some(new_unified) =
+                Attribute::get_unified_type(&unified_type, current_type)
+            {
+                unified_type = new_unified;
+            } else {
+                return None;
+            }
+        }
+        Some(unified_type)
     }
 
     // =========================================================================
@@ -1677,7 +1676,7 @@ impl Display for Tree {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::*;
 
     /// Helper function to create a simple tree structure for testing.
     /// Creates: Root -> Knuckle -> Child
@@ -1736,11 +1735,11 @@ mod tests {
             create_knuckle_test_tree();
 
         // Verify initial state
-        assert_eq!(tree.label(&knuckle_id).as_deref(), Some("knuckle"));
-        assert_eq!(tree.label(&child_id).as_deref(), Some("child"));
+        assert_eq!(tree.label(knuckle_id).as_deref(), Some("knuckle"));
+        assert_eq!(tree.label(child_id).as_deref(), Some("child"));
         assert_eq!(tree.branch_length(knuckle_id), Some(0.1));
         assert_eq!(tree.branch_length(child_id), Some(0.2));
-        assert_eq!(tree.child_ids(&knuckle_id).len(), 1);
+        assert_eq!(tree.child_ids(knuckle_id).len(), 1);
 
         // Remove the knuckle
         tree.remove_knuckle(knuckle_id);
@@ -1749,14 +1748,14 @@ mod tests {
         assert!(!tree.node_exists(Some(knuckle_id)));
 
         // Verify child node is now connected to root
-        assert_eq!(tree.parent_id(&child_id), Some(&root_id));
-        assert!(tree.child_ids(&root_id).contains(&child_id));
+        assert_eq!(tree.parent_id(child_id), Some(root_id));
+        assert!(tree.child_ids(root_id).contains(&child_id));
 
         // Verify branch length is combined
         let expected = 0.3; // 0.1 + 0.2
         let actual = tree.branch_length(child_id).unwrap();
         assert!(
-            (actual - expected).abs() < f64::EPSILON,
+            (actual - expected).abs() < TreeFloat::EPSILON,
             "Expected {}, got {}",
             expected,
             actual
@@ -1764,7 +1763,7 @@ mod tests {
 
         // Verify label is combined
         assert_eq!(
-            tree.label(&child_id).as_deref(),
+            tree.label(child_id).as_deref(),
             Some("knuckle_KNUCKLE_child")
         );
     }
@@ -1780,14 +1779,14 @@ mod tests {
         }
 
         // Verify initial state
-        assert_eq!(tree.label(&knuckle_id).as_deref(), Some("knuckle"));
-        assert_eq!(tree.label(&child_id), None);
+        assert_eq!(tree.label(knuckle_id).as_deref(), Some("knuckle"));
+        assert_eq!(tree.label(child_id), None);
 
         // Remove the knuckle
         tree.remove_knuckle(knuckle_id);
 
         // Verify label is set correctly
-        assert_eq!(tree.label(&child_id).as_deref(), Some("knuckle_KNUCKLE"));
+        assert_eq!(tree.label(child_id).as_deref(), Some("knuckle_KNUCKLE"));
     }
 
     #[test]
@@ -1801,14 +1800,14 @@ mod tests {
         }
 
         // Verify initial state
-        assert_eq!(tree.label(&knuckle_id), None);
-        assert_eq!(tree.label(&child_id).as_deref(), Some("child"));
+        assert_eq!(tree.label(knuckle_id), None);
+        assert_eq!(tree.label(child_id).as_deref(), Some("child"));
 
         // Remove the knuckle
         tree.remove_knuckle(knuckle_id);
 
         // Verify label is set correctly
-        assert_eq!(tree.label(&child_id).as_deref(), Some("KNUCKLE_child"));
+        assert_eq!(tree.label(child_id).as_deref(), Some("KNUCKLE_child"));
     }
 
     #[test]
@@ -1825,18 +1824,18 @@ mod tests {
         }
 
         // Verify initial state
-        assert_eq!(tree.label(&knuckle_id), None);
-        assert_eq!(tree.label(&child_id), None);
+        assert_eq!(tree.label(knuckle_id), None);
+        assert_eq!(tree.label(child_id), None);
 
         // Remove the knuckle
         tree.remove_knuckle(knuckle_id);
 
         // Verify knuckle is removed and child is connected to root
         assert!(!tree.node_exists(Some(knuckle_id)));
-        assert_eq!(tree.parent_id(&child_id), Some(&root_id));
+        assert_eq!(tree.parent_id(child_id), Some(root_id));
 
         // Verify label remains None
-        assert_eq!(tree.label(&child_id), None);
+        assert_eq!(tree.label(child_id), None);
     }
 
     #[test]
@@ -1851,7 +1850,7 @@ mod tests {
         let expected = 0.3; // 0.1 + 0.2
         let actual = tree.branch_length(child_id).unwrap();
         assert!(
-            (actual - expected).abs() < f64::EPSILON,
+            (actual - expected).abs() < TreeFloat::EPSILON,
             "Expected {}, got {}",
             expected,
             actual
@@ -1900,7 +1899,7 @@ mod tests {
         tree.has_branch_lengths = true;
 
         // Verify it's a leaf (no children)
-        assert_eq!(tree.child_ids(&leaf_id).len(), 0);
+        assert_eq!(tree.child_ids(leaf_id).len(), 0);
         assert!(tree.node_exists(Some(leaf_id)));
 
         // Try to remove as knuckle - should do nothing
@@ -1908,7 +1907,7 @@ mod tests {
 
         // Node should still exist since it's not a knuckle
         assert!(tree.node_exists(Some(leaf_id)));
-        assert_eq!(tree.label(&leaf_id).as_deref(), Some("leaf"));
+        assert_eq!(tree.label(leaf_id).as_deref(), Some("leaf"));
     }
 
     #[test]
@@ -1916,7 +1915,7 @@ mod tests {
         let (mut tree, _root_id, internal_id) = create_non_knuckle_test_tree();
 
         // Verify it has multiple children (not a knuckle)
-        assert_eq!(tree.child_ids(&internal_id).len(), 2);
+        assert_eq!(tree.child_ids(internal_id).len(), 2);
         assert!(tree.node_exists(Some(internal_id)));
 
         // Try to remove as knuckle - should do nothing
@@ -1924,8 +1923,8 @@ mod tests {
 
         // Node should still exist since it's not a knuckle
         assert!(tree.node_exists(Some(internal_id)));
-        assert_eq!(tree.label(&internal_id).as_deref(), Some("internal"));
-        assert_eq!(tree.child_ids(&internal_id).len(), 2);
+        assert_eq!(tree.label(internal_id).as_deref(), Some("internal"));
+        assert_eq!(tree.child_ids(internal_id).len(), 2);
     }
 
     #[test]
@@ -1939,19 +1938,19 @@ mod tests {
             .unwrap();
 
         // Verify initial tree structure: root -> knuckle -> child -> grandchild
-        assert_eq!(tree.parent_id(&knuckle_id), Some(&root_id));
-        assert_eq!(tree.parent_id(&child_id), Some(&knuckle_id));
-        assert_eq!(tree.parent_id(&grandchild_id), Some(&child_id));
+        assert_eq!(tree.parent_id(knuckle_id), Some(root_id));
+        assert_eq!(tree.parent_id(child_id), Some(knuckle_id));
+        assert_eq!(tree.parent_id(grandchild_id), Some(child_id));
 
         // Remove knuckle
         tree.remove_knuckle(knuckle_id);
 
         // Verify new tree structure: root -> child -> grandchild
         assert!(!tree.node_exists(Some(knuckle_id)));
-        assert_eq!(tree.parent_id(&child_id), Some(&root_id));
-        assert_eq!(tree.parent_id(&grandchild_id), Some(&child_id));
-        assert!(tree.child_ids(&root_id).contains(&child_id));
-        assert!(tree.child_ids(&child_id).contains(&grandchild_id));
+        assert_eq!(tree.parent_id(child_id), Some(root_id));
+        assert_eq!(tree.parent_id(grandchild_id), Some(child_id));
+        assert!(tree.child_ids(root_id).contains(&child_id));
+        assert!(tree.child_ids(child_id).contains(&grandchild_id));
     }
 
     #[test]
@@ -1963,9 +1962,9 @@ mod tests {
         tree.has_branch_lengths = false;
 
         // Verify initial state
-        assert_eq!(tree.label(&knuckle_id).as_deref(), Some("knuckle"));
-        assert_eq!(tree.label(&child_id).as_deref(), Some("child"));
-        assert_eq!(tree.child_ids(&knuckle_id).len(), 1);
+        assert_eq!(tree.label(knuckle_id).as_deref(), Some("knuckle"));
+        assert_eq!(tree.label(child_id).as_deref(), Some("child"));
+        assert_eq!(tree.child_ids(knuckle_id).len(), 1);
 
         // Remove the knuckle
         tree.remove_knuckle(knuckle_id);
@@ -1974,12 +1973,12 @@ mod tests {
         assert!(!tree.node_exists(Some(knuckle_id)));
 
         // Verify child node is now connected to root
-        assert_eq!(tree.parent_id(&child_id), Some(&root_id));
-        assert!(tree.child_ids(&root_id).contains(&child_id));
+        assert_eq!(tree.parent_id(child_id), Some(root_id));
+        assert!(tree.child_ids(root_id).contains(&child_id));
 
         // Verify label is combined even when branch lengths are not used
         assert_eq!(
-            tree.label(&child_id).as_deref(),
+            tree.label(child_id).as_deref(),
             Some("knuckle_KNUCKLE_child")
         );
     }

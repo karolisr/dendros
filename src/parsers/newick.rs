@@ -1,17 +1,20 @@
-mod attributes;
-mod nhx;
-mod validation;
+pub(crate) mod attributes;
+pub(crate) mod nhx;
+pub(crate) mod validation;
+
+use super::super::TreeFloat;
+use super::super::phylo::attribute::Attribute;
+use super::super::phylo::node::Node;
+use super::super::phylo::node::NodeId;
+use super::super::phylo::tree::Tree;
+use attributes::combine_attributes;
+use attributes::extract_multiple_attribute_blocks;
+use attributes::remove_quotes;
+use attributes::split_label_and_attributes;
+use attributes::split_respecting_brackets;
+use validation::is_valid_newick_structure;
 
 use std::collections::HashMap;
-
-use super::{Attribute, Node, NodeId, Tree, TreeFloat};
-pub use attributes::remove_quotes;
-pub(crate) use attributes::{
-    combine_attributes, extract_multiple_attribute_blocks, merge_attributes,
-    split_label_and_attributes, split_respecting_brackets,
-};
-pub use nhx::{extract_nhx_content, is_nhx_format, parse_nhx_attributes};
-use validation::is_valid_newick_structure;
 
 /// Checks if a character is a NEWICK structural delimiter.
 fn is_structural_delimiter(character: char) -> bool {
@@ -84,7 +87,7 @@ impl QuoteState {
 
 /// Tracks nesting depth for brackets and parentheses during parsing.
 ///
-/// Essential for correctly parsing NEWICK format with annotations in brackets
+/// Used for parsing NEWICK format with annotations in brackets
 /// and nested tree structures in parentheses. Delimiters inside nested
 /// structures should not be treated as structural separators.
 #[derive(Debug, Clone, Default)]
@@ -138,13 +141,13 @@ impl NestingState {
 /// Made public within the newick module for potential reuse in validation
 /// and attribute parsing logic.
 #[derive(Debug, Clone, Default)]
-pub(crate) struct CharacterParseState {
+struct CharacterParseState {
     quote_state: QuoteState,
     nesting_state: NestingState,
 }
 
 impl CharacterParseState {
-    pub(crate) fn new() -> Self {
+    fn new() -> Self {
         Self::default()
     }
 
@@ -356,7 +359,7 @@ pub fn write_newick(trees: &[Tree]) -> String {
 
 /// Converts a single [Tree] to a NEWICK formatted string.
 fn newick_string(tree: &Tree) -> String {
-    if let Some(first_node_id) = &tree.first_node_id() {
+    if let Some(first_node_id) = tree.first_node_id() {
         let children = tree.children(first_node_id);
         let mut newick = newick_string_recursive(children, tree);
 
@@ -369,7 +372,7 @@ fn newick_string(tree: &Tree) -> String {
             newick.push_str(&processed_label);
         }
 
-        let node_attributes = tree.node_attributes(*first_node_id);
+        let node_attributes = tree.node_attributes(first_node_id);
         if !node_attributes.is_empty() {
             let formatted_attributes: Vec<String> = node_attributes
                 .iter()
@@ -404,7 +407,7 @@ fn newick_string_recursive(child_nodes: Vec<&Node>, tree: &Tree) -> String {
         }
 
         if let Some(child_id) = child.node_id() {
-            let node_attributes = tree.node_attributes(*child_id);
+            let node_attributes = tree.node_attributes(child_id);
             if !node_attributes.is_empty() {
                 let formatted_node_attributes: Vec<String> = node_attributes
                     .iter()
@@ -422,7 +425,7 @@ fn newick_string_recursive(child_nodes: Vec<&Node>, tree: &Tree) -> String {
         }
 
         if let Some(child_id) = child.node_id() {
-            let branch_attributes = tree.branch_attributes(*child_id);
+            let branch_attributes = tree.branch_attributes(child_id);
             if !branch_attributes.is_empty() {
                 let formatted_branch_attributes: Vec<String> =
                     branch_attributes
@@ -766,7 +769,7 @@ fn split_multi_newick_string(s: &str) -> Vec<String> {
 
 /// Normalizes NEWICK string by removing whitespace while preserving quoted content.
 ///
-/// This function:
+/// **This function:**
 /// - Removes whitespace outside quotes and branch lengths
 /// - Preserves all content within quotes (including whitespace)
 /// - Handles escaped quotes properly
@@ -876,7 +879,7 @@ fn process_rich_newick_prefix(s: &str) -> (String, Option<bool>) {
 /// - `node_label`: The cleaned node label (None if empty)
 /// - `branch_length`: Parsed numeric branch length (None if not present)
 /// - `branch_attributes`: Parsed attribute map (None if not present)
-pub(crate) fn parse_newick_label<'a>(
+fn parse_newick_label<'a>(
     label: impl Into<&'a str>,
 ) -> (Option<String>, Option<TreeFloat>, Option<HashMap<String, Attribute>>) {
     let label: &str = label.into();
@@ -982,7 +985,8 @@ fn parse_length_first_format(
     (branch_length, combined_attributes)
 }
 
-/// Extracts annotation content from brackets `[...]`, handling multiple consecutive blocks: `[&a=1][&b=2][&c=3]`.
+/// Extracts annotation content from brackets `[...]`, handling multiple
+/// consecutive blocks: `[&a=1][&b=2][&c=3]`.
 fn extract_annotation_content(
     attributes_string: &str,
 ) -> Option<HashMap<String, Attribute>> {
@@ -1078,24 +1082,6 @@ fn find_colon_split_position(s: &str) -> Option<usize> {
 }
 
 /// Filters out hash-style comments from the NEWICK input.
-///
-/// # Examples:
-/// ```ignore
-/// // Basic comment filtering
-/// let input = "# This is a comment\n(A,B,C);";
-/// let filtered = filter_hash_style_comments(input);
-/// // Result: "\n(A,B,C);"
-///
-/// // Inline comment filtering
-/// let input = "(A,B,C); # This tree has 3 taxa";
-/// let filtered = filter_hash_style_comments(input);
-/// // Result: "(A,B,C); "
-///
-/// // Preserve hash in quotes
-/// let input = "('Label#WithHash',B);";
-/// let filtered = filter_hash_style_comments(input);
-/// // Result: "('Label#WithHash',B);" (unchanged)
-/// ```
 fn filter_hash_style_comments(input: &str) -> String {
     let mut result = String::new();
     let mut char_state = CharacterParseState::new();

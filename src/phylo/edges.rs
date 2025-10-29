@@ -1,5 +1,9 @@
-use super::{NodeId, Tree, TreeFloat};
+use super::node::NodeId;
+use super::tree::Tree;
+use crate::TreeFloat;
+
 use rayon::prelude::*;
+
 use std::{collections::HashMap, sync::Arc};
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -18,12 +22,12 @@ pub struct Edge {
     pub edge_index: usize,
 }
 
-pub(super) fn flatten_tree(tree: &Tree) -> Vec<Edge> {
+pub(crate) fn prepare_edges(tree: &Tree) -> Vec<Edge> {
     let tip_count = tree.tip_count_all();
     let tree_height = tree.height();
     let mut tip_id_counter = tip_count;
     if let Some(node_id) = &tree.first_node_id() {
-        let (mut edges, _) = flatten_tree_recursive(
+        let (mut edges, _) = prepare_edges_recursive(
             *node_id, None, 0e0, tree, tree_height, tip_count,
             &mut tip_id_counter,
         );
@@ -35,7 +39,7 @@ pub(super) fn flatten_tree(tree: &Tree) -> Vec<Edge> {
     }
 }
 
-fn flatten_tree_recursive(
+fn prepare_edges_recursive(
     node_id: NodeId,
     parent_node_id: Option<NodeId>,
     parent_height: TreeFloat,
@@ -50,9 +54,9 @@ fn flatten_tree_recursive(
     }
     let branch_length: TreeFloat = tree.branch_length(node_id).unwrap_or(0e0);
     let branch_length_normalized: TreeFloat = branch_length / tree_height;
-    let label: Option<Arc<str>> = tree.label(&node_id);
-    let child_node_ids: &[NodeId] = tree.child_ids(&node_id);
-    let descending_tip_count: usize = tree.tip_count_recursive(&node_id);
+    let label: Option<Arc<str>> = tree.label(node_id);
+    let child_node_ids: &[NodeId] = tree.child_ids(node_id);
+    let descending_tip_count: usize = tree.tip_count_recursive(node_id);
     let mut is_tip: bool = false;
 
     let mut y = TreeFloat::NAN;
@@ -68,7 +72,7 @@ fn flatten_tree_recursive(
 
     let mut y_positions: Vec<TreeFloat> = Vec::new();
     for child_node_id in child_node_ids {
-        let (mut child_edges, mut child_y_positions) = flatten_tree_recursive(
+        let (mut child_edges, mut child_y_positions) = prepare_edges_recursive(
             *child_node_id,
             Some(node_id),
             node_height,
