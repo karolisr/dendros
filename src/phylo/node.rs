@@ -113,16 +113,6 @@ impl<'a> Node {
         }
     }
 
-    // pub fn add_child_ids(&mut self, node_ids: impl Into<&'a [NodeId]>) {
-    //     self.child_ids.extend(node_ids.into());
-    // }
-
-    // pub fn remove_child_ids(&mut self, node_ids: impl Into<&'a [NodeId]>) {
-    //     for &node_id in node_ids.into() {
-    //         self.remove_child_id(node_id);
-    //     }
-    // }
-
     pub(crate) fn edge_index(&self) -> Option<usize> {
         self.edge_index
     }

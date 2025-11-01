@@ -28,8 +28,6 @@ pub enum NexusError {
     MissingHeader,
     #[error("Parse error at line {line}: {message}.")]
     ParseError { line: usize, message: String },
-    // #[error("Invalid block: {block}.")]
-    // InvalidBlock { block: String },
     #[error("Unterminated block: {block}.")]
     UnterminatedBlock { block: String },
     #[error("Unexpected end of file.")]
