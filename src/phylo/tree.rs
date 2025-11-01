@@ -13,7 +13,10 @@ use thiserror::Error;
 
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::fmt::Debug;
 use std::fmt::Display;
+use std::fmt::Formatter;
+use std::fmt::Result as FormatterResult;
 use std::sync::Arc;
 
 #[derive(Debug, Default, Clone)]
@@ -1669,7 +1672,7 @@ impl<'a> Tree {
 }
 
 impl Display for Tree {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FormatterResult {
         write!(f, "{}", self.print_tree())
     }
 }

@@ -6,6 +6,8 @@ use slotmap::new_key_type;
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::fmt::Display;
+use std::fmt::Formatter;
+use std::fmt::Result as FormatterResult;
 use std::sync::Arc;
 
 new_key_type! { pub struct NodeId; }
@@ -190,9 +192,9 @@ impl<'a> From<&'a str> for Node {
 }
 
 impl Display for NodeId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let disp = format!("{self:?}");
-        write!(f, "{}", &disp[7..disp.len() - 1])
+    fn fmt(&self, f: &mut Formatter<'_>) -> FormatterResult {
+        let disp = format!("{:?}", self.0);
+        write!(f, "{disp}")
     }
 }
 
@@ -203,7 +205,7 @@ impl From<NodeId> for String {
 }
 
 impl Display for NodeType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FormatterResult {
         write!(
             f,
             "{}",

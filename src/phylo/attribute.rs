@@ -3,6 +3,8 @@ use crate::TreeInt;
 
 use std::fmt::Debug;
 use std::fmt::Display;
+use std::fmt::Formatter;
+use std::fmt::Result as FormatterResult;
 use std::str::FromStr;
 
 // =============================================================================
@@ -72,7 +74,7 @@ fn normalize_hex_color(s: &str) -> String {
 // =============================================================================
 
 impl Display for AttributeValue {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FormatterResult {
         match self {
             AttributeValue::Integer(integer) => write!(f, "{}", integer),
             AttributeValue::Decimal(decimal) => write!(f, "{}", decimal),
@@ -243,7 +245,7 @@ impl Attribute {
 }
 
 impl Debug for Attribute {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FormatterResult {
         match self {
             Self::Text(arg0) => f.debug_tuple("Text").field(arg0).finish(),
             Self::Decimal(arg0) => {
@@ -259,7 +261,7 @@ impl Debug for Attribute {
 }
 
 impl Display for Attribute {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FormatterResult {
         write!(
             f,
             "{}",

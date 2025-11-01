@@ -18,16 +18,23 @@ fn main() {
 }
 
 fn tree_info(tree_name: &str, tree: &Tree) {
-    println!("=============================================================");
+    let column_width: usize = 80;
+
+    println!("{:=>1$}", "", column_width);
     println!(" Tree: {tree_name}");
     println!(" Tips: {}", tree.tip_count_all());
     println!("Nodes: {}", tree.node_count_all());
-    println!("=============================================================");
+    println!("{:=>1$}", "", column_width);
 
     if tree.node_ids_all().len() > 200 {
         println!();
         return;
     }
+
+    let mut max_node_id_nchar: usize = 0;
+    tree.node_ids_all().iter().for_each(|&id| {
+        max_node_id_nchar = max_node_id_nchar.max(id.to_string().len());
+    });
 
     tree.node_ids_all().iter().for_each(|&id| {
         let mut node_attributes: Vec<(String, Attribute)> = tree
@@ -47,24 +54,62 @@ fn tree_info(tree_name: &str, tree: &Tree) {
 
         let node_label_opt = tree.label(id);
 
+        let node_str;
         if let Some(label) = node_label_opt {
-            println!("\t{id}: {label}");
+            node_str = format!(
+                "  --- Node Id: {:0>1$} | Node Label: {label} ",
+                id.to_string(),
+                max_node_id_nchar
+            );
         } else {
-            println!("\t{id}");
+            node_str = format!(
+                "  --- Node Id: {:0>1$} ",
+                id.to_string(),
+                max_node_id_nchar
+            );
         }
 
+        if node_attributes.is_empty() && branch_attributes.is_empty() {
+            println!("{node_str}");
+        } else {
+            println!("{:-<1$}", node_str, column_width - 2);
+        }
+
+        let mut max_attr_name_nchar: usize = 0;
+        let mut max_attr_value_nchar: usize = 0;
+
         node_attributes.iter().for_each(|(name, attr)| {
-            println!("\t  Node: {name:<30} {attr:?}");
+            max_attr_name_nchar = max_attr_name_nchar.max(name.len());
+            max_attr_value_nchar =
+                max_attr_value_nchar.max(format!("{attr:?}").len());
         });
 
         branch_attributes.iter().for_each(|(name, attr)| {
-            println!("\tBranch: {name:<30} {attr:?}");
+            max_attr_name_nchar = max_attr_name_nchar.max(name.len());
+            max_attr_value_nchar =
+                max_attr_value_nchar.max(format!("{attr:?}").len());
+        });
+
+        node_attributes.iter().for_each(|(name, attr)| {
+            println!(
+                "      |   Node Attr: {name:<1$} = {:<2$}",
+                format!("{attr:?}"),
+                max_attr_name_nchar,
+                max_attr_value_nchar,
+            );
+        });
+
+        branch_attributes.iter().for_each(|(name, attr)| {
+            println!(
+                "      | Branch Attr: {name:<1$} = {:<2$}",
+                format!("{attr:?}"),
+                max_attr_name_nchar,
+                max_attr_value_nchar,
+            );
         });
 
         if !node_attributes.is_empty() || !branch_attributes.is_empty() {
-            println!(
-                "\t---------------------------------------------------------"
-            );
+            println!("  {:->1$}", "", column_width - 4);
         }
     });
 
@@ -89,9 +134,9 @@ fn files(file_paths: &mut Vec<PathBuf>) {
         // "./tests/data/big_seed_plant_trees/mag2015_ot_dated.tre",
         // "./tests/data/big_seed_plant_trees/ot_seedpruned_dated.tre",
         // =====================================================================
-        // "./tests/data/Czech_Huerta-Cepas_Stamatakis_2017/Czech_Huerta-Cepas_Stamatakis_2017_unrooted__comments.newick",
+        // "./tests/data/Czech_Huerta-Cepas_Stamatakis_2017/Czech_Huerta-Cepas_Stamatakis_2017_unrooted__node_attributes.newick",
         // "./tests/data/Czech_Huerta-Cepas_Stamatakis_2017/Czech_Huerta-Cepas_Stamatakis_2017_unrooted__node_labels.newick",
-        // "./tests/data/Czech_Huerta-Cepas_Stamatakis_2017/Czech_Huerta-Cepas_Stamatakis_2017_unrooted.newick",
+        // "./tests/data/Czech_Huerta-Cepas_Stamatakis_2017/Czech_Huerta-Cepas_Stamatakis_2017_unrooted__node_and_branch_attributes.newick",
         // =====================================================================
         // "./tests/data/carnivore.tre",
         "./tests/data/carnivore.tree",
