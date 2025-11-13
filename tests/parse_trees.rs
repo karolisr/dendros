@@ -5,35 +5,35 @@ use std::fs;
 fn test_parse_trees_with_real_files() {
     if let Ok(content) = fs::read_to_string("tests/data/carnivore.tre") {
         let trees = parse_trees(content);
-        assert!(trees.is_some(), "Failed to parse carnivore.tre");
+        assert!(trees.is_ok(), "Failed to parse carnivore.tre");
         let trees = trees.unwrap();
         assert!(!trees.is_empty(), "carnivore.tre should contain one tree");
     }
 
     if let Ok(content) = fs::read_to_string("tests/data/carnivore.tree") {
         let trees = parse_trees(content);
-        assert!(trees.is_some(), "Failed to parse carnivore.tree");
+        assert!(trees.is_ok(), "Failed to parse carnivore.tree");
         let trees = trees.unwrap();
         assert!(!trees.is_empty(), "carnivore.tree should contain one tree");
     }
 
     if let Ok(content) = fs::read_to_string("tests/data/influenza.tre") {
         let trees = parse_trees(content);
-        assert!(trees.is_some(), "Failed to parse influenza.tre");
+        assert!(trees.is_ok(), "Failed to parse influenza.tre");
         let trees = trees.unwrap();
         assert!(!trees.is_empty(), "influenza.tre should contain one tree");
     }
 
     if let Ok(content) = fs::read_to_string("tests/data/influenza.tree") {
         let trees = parse_trees(content);
-        assert!(trees.is_some(), "Failed to parse influenza.tree");
+        assert!(trees.is_ok(), "Failed to parse influenza.tree");
         let trees = trees.unwrap();
         assert!(!trees.is_empty(), "influenza.tree should contain one tree");
     }
 
     if let Ok(content) = fs::read_to_string("tests/data/tree01.tre") {
         let trees = parse_trees(content);
-        assert!(trees.is_some(), "Failed to parse tree01.tre");
+        assert!(trees.is_ok(), "Failed to parse tree01.tre");
         let trees = trees.unwrap();
         assert!(!trees.is_empty(), "tree01.tre should contain one tree");
     }
@@ -129,7 +129,7 @@ fn test_parse_trees_error_handling() {
     // Invalid NEWICK
     let invalid_newick = "(A,B,C"; // Missing closing parenthesis and semicolon
     let result = parse_trees(invalid_newick.to_string());
-    assert!(result.is_none(), "Invalid NEWICK should return None");
+    assert!(result.is_err(), "Invalid NEWICK should return Err");
 
     // Invalid NEXUS
     let invalid_nexus = r#"
@@ -139,12 +139,12 @@ BEGIN TREES;
 END;
 "#; // Missing closing parenthesis and semicolon in tree
     let result = parse_trees(invalid_nexus.to_string());
-    assert!(result.is_none(), "Invalid NEXUS should return None");
+    assert!(result.is_err(), "Invalid NEXUS should return Err");
 
     // Unrecognizable format
     let unrecognizable = "This is just plain text with no tree structure.";
     let result = parse_trees(unrecognizable.to_string());
-    assert!(result.is_none(), "Unrecognizable format should return None");
+    assert!(result.is_err(), "Unrecognizable format should return Err");
 }
 
 #[test]
@@ -177,7 +177,7 @@ fn test_parse_trees_with_comments() {
     let newick_with_comments =
         "(A[&support=95],B[&support=87],(C,D)[&support=78])[&confidence=0.9];";
     let trees = parse_trees(newick_with_comments.to_string());
-    assert!(trees.is_some(), "NEWICK with comments should parse successfully");
+    assert!(trees.is_ok(), "NEWICK with comments should parse successfully");
 
     // NEXUS with comments
     let nexus_with_comments = r#"
@@ -189,5 +189,5 @@ BEGIN TREES;
 END;
 "#;
     let trees = parse_trees(nexus_with_comments.to_string());
-    assert!(trees.is_some(), "NEXUS with comments should parse successfully");
+    assert!(trees.is_ok(), "NEXUS with comments should parse successfully");
 }

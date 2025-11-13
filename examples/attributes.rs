@@ -9,7 +9,7 @@ fn main() {
     files(&mut file_paths);
     file_paths.iter().for_each(|p| {
         let trees_opt = parse_trees(read_text_file(p.to_path_buf()));
-        if let Some(trees) = trees_opt {
+        if let Ok(trees) = trees_opt {
             trees.iter().for_each(|t| {
                 tree_info(p.to_str().unwrap(), t);
             });

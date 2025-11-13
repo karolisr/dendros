@@ -20,6 +20,7 @@ mod phylo;
 pub type TreeFloat = f64;
 pub type TreeInt = i64;
 
+pub use parsers::TreeParseError;
 pub use parsers::newick::parse_newick;
 pub use parsers::newick::write_newick;
 pub use parsers::nexus::NexusError;
