@@ -2,7 +2,8 @@
 
 use dendros::{
     Attribute, AttributeType, AttributeValue, AttributeValueType, NexusError,
-    NodeId, Tree, TreeError, parse_newick, parse_nexus, parse_nexus_advanced,
+    NodeId, Tree, TreeError, TreeFloat, parse_newick, parse_nexus,
+    parse_nexus_advanced,
 };
 use std::collections::HashMap;
 use std::fs;
@@ -629,7 +630,7 @@ fn test_attribute_parsing_from_string_list_syntax() {
         assert_eq!(values.len(), 3);
         assert!(matches!(values[0], AttributeValue::Integer(1)));
         assert!(
-            matches!(values[1], AttributeValue::Decimal(val) if (val - 2.5).abs() < f64::EPSILON)
+            matches!(values[1], AttributeValue::Decimal(val) if (val - 2.5).abs() < TreeFloat::EPSILON)
         );
         assert!(
             matches!(values[2], AttributeValue::Text(ref s) if s == "hello")
@@ -655,10 +656,10 @@ fn test_range_syntax_converted_to_list() {
     if let Attribute::List(values) = range_attr {
         assert_eq!(values.len(), 2);
         assert!(
-            matches!(values[0], AttributeValue::Decimal(val) if (val - 1.5).abs() < f64::EPSILON)
+            matches!(values[0], AttributeValue::Decimal(val) if (val - 1.5).abs() < TreeFloat::EPSILON)
         );
         assert!(
-            matches!(values[1], AttributeValue::Decimal(val) if (val - 2.5).abs() < f64::EPSILON)
+            matches!(values[1], AttributeValue::Decimal(val) if (val - 2.5).abs() < TreeFloat::EPSILON)
         );
     } else {
         panic!("Expected List attribute from range parsing");
@@ -1427,7 +1428,7 @@ fn test_hex_colors_in_curly_brace_lists() {
         assert!(matches!(values[0], AttributeValue::Integer(8)));
 
         assert!(
-            matches!(values[1], AttributeValue::Decimal(d) if (d - 0.188).abs() < f64::EPSILON)
+            matches!(values[1], AttributeValue::Decimal(d) if (d - 0.188).abs() < TreeFloat::EPSILON)
         );
 
         assert!(
@@ -1743,7 +1744,7 @@ fn test_iqtree_attribute_parsing() {
         assert_eq!(values.len(), 3);
         assert!(matches!(values[0], AttributeValue::Integer(8)));
         assert!(
-            matches!(values[1], AttributeValue::Decimal(val) if (val - 0.18815655069999998).abs() < f64::EPSILON)
+            matches!(values[1], AttributeValue::Decimal(val) if (val - 0.188_156_55).abs() < TreeFloat::EPSILON)
         );
         assert!(
             matches!(values[2], AttributeValue::Color(ref s) if s == "#FF3333")
@@ -1761,7 +1762,7 @@ fn test_iqtree_attribute_parsing() {
             matches!(values[0], AttributeValue::Text(ref s) if s == "collapsed")
         );
         assert!(
-            matches!(values[1], AttributeValue::Decimal(val) if (val - 0.18815655069999998).abs() < f64::EPSILON)
+            matches!(values[1], AttributeValue::Decimal(val) if (val - 0.188_156_55).abs() < TreeFloat::EPSILON)
         );
     } else {
         panic!("Expected List attribute for collapse");
@@ -1807,7 +1808,7 @@ fn test_curly_brace_list_parsing_various_cases() {
         assert_eq!(values.len(), 3);
         assert!(matches!(values[0], AttributeValue::Integer(1)));
         assert!(
-            matches!(values[1], AttributeValue::Decimal(val) if (val - 2.5).abs() < f64::EPSILON)
+            matches!(values[1], AttributeValue::Decimal(val) if (val - 2.5).abs() < TreeFloat::EPSILON)
         );
         assert!(
             matches!(values[2], AttributeValue::Text(ref s) if s == "text")
@@ -1825,10 +1826,10 @@ fn test_backward_compatibility_range_parsing() {
     if let Attribute::List(values) = range {
         assert_eq!(values.len(), 2);
         assert!(
-            matches!(values[0], AttributeValue::Decimal(val) if (val - 1.5).abs() < f64::EPSILON)
+            matches!(values[0], AttributeValue::Decimal(val) if (val - 1.5).abs() < TreeFloat::EPSILON)
         );
         assert!(
-            matches!(values[1], AttributeValue::Decimal(val) if (val - 2.5).abs() < f64::EPSILON)
+            matches!(values[1], AttributeValue::Decimal(val) if (val - 2.5).abs() < TreeFloat::EPSILON)
         );
     } else {
         panic!("Expected List for range");
@@ -4362,9 +4363,9 @@ struct TreeTopology {
 struct BranchLengthStats {
     has_any: bool,
     has_all: bool,
-    min_length: Option<f64>,
-    max_length: Option<f64>,
-    total_length: f64,
+    min_length: Option<TreeFloat>,
+    max_length: Option<TreeFloat>,
+    total_length: TreeFloat,
 }
 
 fn validate_tree_topology(tree: &Tree, expected: &TreeTopology, name: &str) {
@@ -4401,12 +4402,12 @@ fn validate_tree_topology(tree: &Tree, expected: &TreeTopology, name: &str) {
     );
 }
 
-fn calculate_tree_height(tree: &Tree) -> f64 {
+fn calculate_tree_height(tree: &Tree) -> TreeFloat {
     let root_id = tree.first_node_id().expect("Tree should have a root");
     calculate_node_height(tree, root_id)
 }
 
-fn calculate_node_height(tree: &Tree, node_id: dendros::NodeId) -> f64 {
+fn calculate_node_height(tree: &Tree, node_id: dendros::NodeId) -> TreeFloat {
     let children = tree.child_nodes(node_id);
     if children.is_empty() {
         // Leaf node
@@ -4420,11 +4421,11 @@ fn calculate_node_height(tree: &Tree, node_id: dendros::NodeId) -> f64 {
                 let branch_len = child.branch_length().unwrap_or(0.0);
                 calculate_node_height(tree, child_id) + branch_len
             })
-            .fold(0.0, f64::max)
+            .fold(0.0, TreeFloat::max)
     }
 }
 
-fn calculate_tip_distances(tree: &Tree) -> Vec<f64> {
+fn calculate_tip_distances(tree: &Tree) -> Vec<TreeFloat> {
     let mut distances = Vec::new();
     for &tip_id in tree.tip_node_ids_all().iter() {
         let distance = calculate_distance_to_root(tree, tip_id);
@@ -4434,7 +4435,10 @@ fn calculate_tip_distances(tree: &Tree) -> Vec<f64> {
     distances
 }
 
-fn calculate_distance_to_root(tree: &Tree, node_id: dendros::NodeId) -> f64 {
+fn calculate_distance_to_root(
+    tree: &Tree,
+    node_id: dendros::NodeId,
+) -> TreeFloat {
     let mut current_id = node_id;
     let mut total_distance = 0.0;
 
@@ -4498,12 +4502,17 @@ fn calculate_branch_length_stats(tree: &Tree) -> BranchLengthStats {
     let min_length = if lengths.is_empty() {
         None
     } else {
-        Some(lengths.iter().cloned().fold(f64::INFINITY, f64::min))
+        Some(lengths.iter().cloned().fold(TreeFloat::INFINITY, TreeFloat::min))
     };
     let max_length = if lengths.is_empty() {
         None
     } else {
-        Some(lengths.iter().cloned().fold(f64::NEG_INFINITY, f64::max))
+        Some(
+            lengths
+                .iter()
+                .cloned()
+                .fold(TreeFloat::NEG_INFINITY, TreeFloat::max),
+        )
     };
 
     BranchLengthStats { has_any, has_all, min_length, max_length, total_length }
