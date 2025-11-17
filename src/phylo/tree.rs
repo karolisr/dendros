@@ -1049,6 +1049,14 @@ impl<'a> Tree {
                 let yanked_node = self.yank_node(node_to_drop_id)?;
                 self.edges = None;
                 _ = self.validate()?;
+
+                // Retain the label of the yanked node. ------------------------
+                if let Some(yanked_node_label) = yanked_node.node_label()
+                    && let Some(first_node) = self.node_mut(self.first_node_id)
+                {
+                    first_node.set_node_label(Some(yanked_node_label.as_ref()));
+                } // -----------------------------------------------------------
+
                 self.rebuild_edges();
                 Ok(yanked_node)
             }
