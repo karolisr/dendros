@@ -6,6 +6,7 @@ use std::fmt::Display;
 use std::fmt::Formatter;
 use std::fmt::Result as FormatterResult;
 use std::str::FromStr;
+use std::string::ToString;
 
 // =============================================================================
 // Type definitions
@@ -41,6 +42,21 @@ pub enum AttributeValueType {
     Text,
 }
 
+impl Display for AttributeValueType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FormatterResult {
+        write!(
+            f,
+            "{}",
+            match self {
+                AttributeValueType::Integer => "Integer",
+                AttributeValueType::Decimal => "Decimal",
+                AttributeValueType::Color => "Color",
+                AttributeValueType::Text => "Text",
+            }
+        )
+    }
+}
+
 /// Type signature for attributes.
 #[derive(Clone, PartialEq, Debug)]
 pub enum AttributeType {
@@ -49,6 +65,30 @@ pub enum AttributeType {
     Color,
     Text,
     List(Vec<AttributeValueType>),
+}
+
+impl Display for AttributeType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FormatterResult {
+        write!(
+            f,
+            "{}",
+            match self {
+                AttributeType::Integer => "Integer".to_string(),
+                AttributeType::Decimal => "Decimal".to_string(),
+                AttributeType::Color => "Color".to_string(),
+                AttributeType::Text => "Text".to_string(),
+                AttributeType::List(attribute_value_types) => {
+                    let attribute_value_types_string: String =
+                        attribute_value_types
+                            .iter()
+                            .map(ToString::to_string)
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                    format!("List({})", attribute_value_types_string)
+                }
+            }
+        )
+    }
 }
 
 // =============================================================================

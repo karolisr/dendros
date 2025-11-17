@@ -2,6 +2,9 @@ pub(crate) mod attributes;
 pub(crate) mod nhx;
 pub(crate) mod validation;
 
+use crate::TreeError;
+use crate::TreeParseError;
+
 use super::super::TreeFloat;
 use super::super::phylo::attribute::Attribute;
 use super::super::phylo::node::Node;
@@ -360,7 +363,7 @@ pub fn write_newick(trees: &[Tree]) -> String {
 /// Converts a single [Tree] to a NEWICK formatted string.
 fn newick_string(tree: &Tree) -> String {
     if let Some(first_node_id) = tree.first_node_id() {
-        let children = tree.children(first_node_id);
+        let children = tree.child_nodes(first_node_id);
         let mut newick = newick_string_recursive(children, tree);
 
         if !newick.is_empty() {
@@ -392,7 +395,7 @@ fn newick_string_recursive(child_nodes: Vec<&Node>, tree: &Tree) -> String {
     let mut newick: String = String::new();
     for child in child_nodes {
         if let Some(child_id) = child.node_id() {
-            let children = tree.children(child_id);
+            let children = tree.child_nodes(child_id);
             if !children.is_empty() {
                 newick.push_str(&format!(
                     "({})",
@@ -445,7 +448,9 @@ fn newick_string_recursive(child_nodes: Vec<&Node>, tree: &Tree) -> String {
 }
 
 /// Parses NEWICK formatted strings into [Tree] objects.
-pub fn parse_newick(newick_string: String) -> Option<Vec<Tree>> {
+pub fn parse_newick(
+    newick_string: String,
+) -> Result<Vec<Tree>, TreeParseError> {
     let mut trees: Vec<Tree> = Vec::new();
     let s_filtered = filter_hash_style_comments(&newick_string);
     let tree_strings = split_multi_newick_string(&s_filtered);
@@ -455,13 +460,58 @@ pub fn parse_newick(newick_string: String) -> Option<Vec<Tree>> {
         trees.push(tree);
     }
 
-    Some(trees)
+    Ok(trees)
 }
 
-/// Parses a single NEWICK formatted tree string.
-fn parse_single_newick_tree(s: String) -> Option<Tree> {
+/// Parses a single NEWICK formatted tree string into a complete [Tree] structure.
+///
+/// This function handles the complete parsing workflow for a single tree, including
+/// validation, normalization, recursive parsing, validation, and optional rooting preference
+/// application. It is the core entry point for converting a NEWICK string into a tree object.
+///
+/// **Processing pipeline:**
+/// 1. **Validation**: Checks if the string has valid NEWICK structure using `is_valid_newick_structure()`
+/// 2. **Rich NEWICK prefix**: Extracts any rooting preference (`[&U]` or `[&R]`) using `process_rich_newick_prefix()`
+/// 3. **Normalization**: Removes whitespace while preserving quotes and annotations using `normalize_newick_string()`
+/// 4. **Recursive parsing**: Builds the tree structure using `parse_newick_recursive()`
+/// 5. **Validation**: Validates tree structure, node types, and unifies attribute types
+/// 6. **Edge building**: Rebuilds edge cache for efficient tree traversal
+/// 7. **Rooting**: Applies Rich NEWICK rooting preference if specified (`[&R]` for rooted, `[&U]` for unrooted)
+///
+/// **Rich NEWICK format support:**
+/// - `[&R]` prefix: Forces tree to be treated as rooted
+/// - `[&U]` prefix: Forces tree to be treated as unrooted
+/// - No prefix: Uses default rooting behavior
+///
+/// **Input format examples:**
+/// - Simple tree: `"(A,B,C);"`
+/// - With branch lengths: `"(A:0.1,B:0.2,C:0.3):0.0;"`
+/// - With attributes: `"(A[&taxon=X]:0.1,B:0.2);"`
+/// - With Rich NEWICK: `"[&R] (A:0.1,B:0.2);"`
+/// - Multiple attribute blocks: `"(A[&a=1][&b=2]:0.1,B);"`
+///
+/// **Arguments:**
+/// - `s` - A NEWICK formatted tree string. Must end with semicolon after normalization.
+///
+/// **Returns:**
+/// - `Ok(Tree)` - A validated tree with edges rebuilt and rooting preference applied
+/// - `Err(TreeParseError::InvalidNewick)` - If the string doesn't have valid NEWICK structure
+/// - `Err(TreeParseError::TreeError(err))` - If tree validation fails or rooting cannot be applied
+///
+/// **Error handling:**
+/// - Validation errors are propagated with context preserved
+/// - Structural errors prevent tree construction and return early
+/// - Type unification errors during validation are converted to TreeParseError
+/// - Rooting preference errors are converted to TreeParseError
+///
+/// **Side effects:**
+/// - This function calls `rebuild_edges()` to cache edge information
+/// - Tree is modified in-place during validation (node types are set, attributes unified)
+/// - Knuckle nodes (degree-2 vertices) are automatically removed during validation
+///
+fn parse_single_newick_tree(s: String) -> Result<Tree, TreeParseError> {
     if !is_valid_newick_structure(&s) {
-        return None;
+        return Err(TreeParseError::InvalidNewick);
     }
 
     let (s_line_clean, rooting_preference) = process_rich_newick_prefix(&s);
@@ -469,17 +519,90 @@ fn parse_single_newick_tree(s: String) -> Option<Tree> {
 
     let mut tree = parse_newick_recursive(s_line_clean, None, Tree::default());
 
-    let parse_result = tree.validate(true, false);
-    if parse_result.is_err() {
-        _ = parse_result.map_err(|x| println!("{x}"));
-        None
+    let validation_result = tree.validate();
+    if validation_result.is_ok() {
+        tree.rebuild_edges();
+    }
+
+    if validation_result.is_err() {
+        validation_result.map_or_else(
+            |err| Err(TreeParseError::TreeError(err)),
+            |_| Ok(tree),
+        )
     } else {
         // Apply Rich NEWICK rooting preference, if specified.
-        apply_rooting_preference(&mut tree, rooting_preference);
-        Some(tree)
+        apply_rooting_preference(&mut tree, rooting_preference).map_or_else(
+            |err| Err(TreeParseError::TreeError(err)),
+            |_| Ok(tree),
+        )
     }
 }
 
+/// Recursively parses NEWICK formatted tree structure and builds the tree topology.
+///
+/// This is the core recursive descent parser that processes NEWICK strings character-by-character,
+/// maintaining parsing state (quotes, nesting depth, parentheses) while constructing tree nodes
+/// and establishing parent-child relationships.
+///
+/// **Parsing algorithm:**
+/// This function uses a character-by-character state machine approach:
+/// 1. **Quote tracking**: Maintains single and double quote states to preserve content
+///    within quotes while skipping structural delimiters
+/// 2. **Bracket tracking**: Tracks square bracket depth for annotations without interpreting them
+/// 3. **Parenthesis handling**:
+///    - Opening `(`: Increments nesting depth, marks start of subtree
+///    - Closing `)`: Signals end of subtree, triggers label parsing and recursive processing
+/// 4. **Comma handling**: Processes comma-separated nodes, handling both parenthesized and
+///    non-parenthesized node lists
+/// 5. **Node creation**: Creates nodes from raw NEWICK labels (may include branch length and attributes)
+/// 6. **Tree building**: Adds nodes to tree with proper parent-child relationships
+///
+/// **Supported NEWICK patterns:**
+/// - Parenthesized subtrees: `(child1,child2,child3)`
+/// - Nested subtrees: `((A,B),C)`
+/// - Non-parenthesized lists: `A,B,C` (flat node list)
+/// - Mixed patterns: `(A:0.1,B),(C:0.2,D)`
+/// - Node labels with attributes: `A[&attr=val]:0.5`
+///
+/// **State machine details:**
+/// The function maintains a `ParserState` that tracks:
+/// - Current position in the input string
+/// - Parenthesis nesting depth
+/// - Quote state (both single and double quotes)
+/// - Bracket depth for annotation tracking
+/// - Whether the current parse context is within parentheses
+///
+/// **Character processing:**
+/// - **Quotes** (`'`, `"`): Toggle quote state; content within quotes is preserved literally
+/// - **Brackets** (`[`, `]`): Track annotation nesting; content is preserved but not parsed
+/// - **Open paren** (`(`): Mark start of a clade/subtree if not quoted
+/// - **Close paren** (`)`): Mark end of clade; recursively process subtree contents
+/// - **Comma** (`,`): Separate sibling nodes at appropriate nesting level
+/// - **Other characters**: Part of node labels, branch lengths, or annotations
+///
+/// **Arguments:**
+/// - `s` - The NEWICK string to parse (should be normalized, without leading/trailing whitespace)
+/// - `parent_id` - The parent node ID for newly created nodes (None for root level)
+/// - `tree` - The tree structure to add nodes to (modified in-place and returned)
+///
+/// **Returns:**
+/// The modified `tree` with parsed nodes added. The function always succeeds; invalid
+/// structures may result in unexpected tree topologies but do not return errors.
+///
+/// **Implementation details:**
+/// - Uses `CharacterParseState` to manage quotes and nesting depth across iterations
+/// - Processes escaped quotes (consecutive quotes) properly
+/// - Handles both parenthesized nodes (e.g., `(A:0.1,B:0.2)label:0.3[&attr]`) and
+///   non-parenthesized nodes (e.g., `A:0.1,B:0.2,C`)
+/// - Creates nodes only after encountering structural delimiters (`,`, `)`)
+/// - Recursively processes subtree contents within parentheses
+///
+/// **Note:**
+///
+/// This function should typically be called through `parse_single_newick_tree()` rather than
+/// directly, as that function provides necessary pre-processing and post-processing steps.
+/// Raw input strings may not parse correctly without prior normalization and validation.
+///
 fn parse_newick_recursive(
     s: String,
     parent_id: Option<NodeId>,
@@ -698,24 +821,40 @@ fn create_node_from_raw_label<'a>(newick_label: impl Into<&'a str>) -> Node {
 /// - `Some(false)`: Force unrooted (from [&U] prefix)
 /// - `Some(true)`: Force rooted (from [&R] prefix)
 /// - `None`: Use default rooting behavior
-fn apply_rooting_preference(tree: &mut Tree, rooting_preference: Option<bool>) {
+fn apply_rooting_preference(
+    tree: &mut Tree,
+    rooting_preference: Option<bool>,
+) -> Result<NodeId, TreeError> {
     match rooting_preference {
         Some(false) => {
             // Force unrooted ([&U]).
-            let _ = tree.unroot();
+            match tree.unroot() {
+                Ok(node) => return Ok(node.node_id().unwrap()),
+                Err(err) => match err {
+                    TreeError::UnrootedTree => {}
+                    err => return Err(err),
+                },
+            };
         }
+
         Some(true) => {
             // Force rooted ([&R])
             if !tree.is_rooted() && tree.tip_count_all() >= 3 {
                 // Root at the first tip node to create a proper rooted tree.
-                if let Some(first_tip) = tree.tip_node_ids_all().first() {
-                    let _ = tree.root(*first_tip);
-                }
+                // ToDo: check if this is OK: rooting on the FIRST TIP!
+                return tree.root(*tree.tip_node_ids_all().first().unwrap());
             }
         }
-        None => {
-            // Default behavior.
-        }
+        None => {}
+    }
+
+    if let Some(first_node_id) = tree.first_node_id() {
+        Ok(first_node_id)
+    } else {
+        Err(TreeError::InvalidTree(
+            "The value of first_node_id is None; This should never happen."
+                .to_string(),
+        ))
     }
 }
 

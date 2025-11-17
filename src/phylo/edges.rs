@@ -55,8 +55,8 @@ fn prepare_edges_recursive(
     let branch_length: TreeFloat = tree.branch_length(node_id).unwrap_or(0e0);
     let branch_length_normalized: TreeFloat = branch_length / tree_height;
     let label: Option<Arc<str>> = tree.label(node_id);
-    let child_node_ids: &[NodeId] = tree.child_ids(node_id);
-    let descending_tip_count: usize = tree.tip_count_recursive(node_id);
+    let child_node_ids: &[NodeId] = tree.child_node_ids(node_id);
+    let descending_tip_count: usize = tree.tip_node_count_recursive(node_id);
     let mut is_tip: bool = false;
 
     let mut y = TreeFloat::NAN;

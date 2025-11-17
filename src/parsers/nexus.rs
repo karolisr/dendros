@@ -1,5 +1,6 @@
 use super::super::phylo::attribute::Attribute;
 use super::super::phylo::tree::Tree;
+use super::TreeParseError;
 use super::newick::attributes::extract_multiple_attribute_blocks;
 use super::newick::attributes::merge_attributes;
 use super::newick::attributes::remove_quotes;
@@ -34,6 +35,8 @@ pub enum NexusError {
     UnexpectedEof,
     #[error("Invalid tree definition: {definition}.")]
     InvalidTreeDefinition { definition: String },
+    #[error("Parsing error: {0}.")]
+    TreeParseError(TreeParseError),
     #[error(
         "Taxa count mismatch: expected {expected} taxa but found {actual}."
     )]
@@ -519,7 +522,7 @@ impl NexusParser {
 
             // Parse the NEWICK string using the existing parser
             match parse_newick(newick_for_parsing) {
-                Some(trees) => {
+                Ok(trees) => {
                     if !trees.is_empty() {
                         let mut tree = trees[0].clone();
 
@@ -537,10 +540,8 @@ impl NexusParser {
                         });
                     }
                 }
-                None => {
-                    return Err(NexusError::InvalidTreeDefinition {
-                        definition: line.to_string(),
-                    });
+                Err(err) => {
+                    return Err(NexusError::TreeParseError(err));
                 }
             }
         } else {

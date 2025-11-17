@@ -32,25 +32,52 @@ pub struct Tree {
 
 #[derive(Debug, Error)]
 pub enum TreeError {
-    #[error("Parent node with NodeId: {0} does not exist.")]
-    ParentNodeDoesNotExist(NodeId),
+    #[error("Node with NodeId: {0} does not exist.")]
+    NodeDoesNotExist(NodeId),
+
+    #[error("Node with NodeId: {0} does not have a parent.")]
+    NodeDoesNotHaveParent(NodeId),
+
+    #[error("Could not get a mutable reference to node with NodeId: {0}.")]
+    FailedToObtainMutableReferenceToNode(NodeId),
+
     #[error("Tree validation failed: {0}.")]
     InvalidTree(String),
+
     #[error("Cannot use this node as outgroup: {0}.")]
     InvalidOutgroupNode(NodeId),
+
+    #[error("The tree is not rooted.")]
+    UnrootedTree,
+
+    #[error("Child node count for node {node_id}: {child_node_count} != 2")]
+    ChildNodeCountIsNotTwo { node_id: NodeId, child_node_count: usize },
+
+    #[error(
+        "Both child nodes of node {parent_node_id} are tips: {child1_node_id}, {child2_node_id}."
+    )]
+    BothChildNodesAreTips {
+        parent_node_id: NodeId,
+        child1_node_id: NodeId,
+        child2_node_id: NodeId,
+    },
+
     #[error("Attribute key '{0}' already exists and cannot be renamed to.")]
     AttributeKeyAlreadyExists(String),
-    #[error("Attribute '{0}' not found on node {1}.")]
-    AttributeNotFound(String, NodeId),
-    #[error("Attribute type mismatch: cannot convert {0} to {1}.")]
-    AttributeTypeMismatch(String, String),
+
+    #[error("Attribute '{attribute_key}' not found on node {node_id}.")]
+    AttributeNotFound { attribute_key: String, node_id: NodeId },
+
+    #[error(
+        "Attribute type mismatch: cannot convert {attribute_type_from} to {attribute_type_to}."
+    )]
+    AttributeTypeMismatch {
+        attribute_type_from: AttributeType,
+        attribute_type_to: AttributeType,
+    },
 }
 
 impl<'a> Tree {
-    // =========================================================================
-    // Construction & Validation
-    // =========================================================================
-
     pub fn new() -> Self {
         Self::default()
     }
@@ -83,20 +110,18 @@ impl<'a> Tree {
     pub(crate) fn add_nodes(
         &mut self,
         nodes: impl Into<Vec<Node>>,
-        parent_node_id: Option<NodeId>,
+        parent_node_id_opt: Option<NodeId>,
     ) -> Result<Vec<NodeId>, TreeError> {
         let mut nodes: Vec<Node> = nodes.into().to_vec();
 
-        if let Some(parent_node_id_value) = parent_node_id {
-            if self.node_exists(parent_node_id) {
+        if let Some(parent_node_id) = parent_node_id_opt {
+            if self.node_exists(parent_node_id_opt) {
                 for node in &mut nodes {
-                    node.set_parent_id(parent_node_id);
+                    node.set_parent_id(parent_node_id_opt);
                     self.edges = None;
                 }
             } else {
-                return Err(TreeError::ParentNodeDoesNotExist(
-                    parent_node_id_value,
-                ));
+                return Err(TreeError::NodeDoesNotExist(parent_node_id));
             }
         }
 
@@ -110,7 +135,7 @@ impl<'a> Tree {
 
             node_ids.push(node_id);
 
-            if let Some(parent_node) = self.node_mut(parent_node_id) {
+            if let Some(parent_node) = self.node_mut(parent_node_id_opt) {
                 parent_node.add_child_id(node_id);
             }
         }
@@ -182,7 +207,8 @@ impl<'a> Tree {
     /// not validate or modify other aspects of tree topology.
     ///
     fn remove_knuckle(&mut self, knuckle_node_id: NodeId) {
-        let putative_knuckle_child_node_ids = self.child_ids(knuckle_node_id);
+        let putative_knuckle_child_node_ids =
+            self.child_node_ids(knuckle_node_id);
 
         // Check if this node is a knuckle.
         if putative_knuckle_child_node_ids.len() == 1 {
@@ -210,6 +236,7 @@ impl<'a> Tree {
                             knuckle_node_label, child_node_label
                         );
                         child.set_node_label(Some(new_node_label.as_str()));
+                        #[cfg(debug_assertions)]
                         println!(
                             "Removing knuckle: {}({}) -> {}({})",
                             knuckle_node_id,
@@ -221,6 +248,7 @@ impl<'a> Tree {
                         let new_node_label =
                             format!("{}_KNUCKLE", knuckle_node_label);
                         child.set_node_label(Some(new_node_label.as_str()));
+                        #[cfg(debug_assertions)]
                         println!(
                             "Removing knuckle: {}({}) -> {}({})",
                             knuckle_node_id,
@@ -233,25 +261,30 @@ impl<'a> Tree {
                     let new_node_label =
                         format!("KNUCKLE_{}", child_node_label);
                     child.set_node_label(Some(new_node_label.as_str()));
+                    #[cfg(debug_assertions)]
                     println!(
                         "Removing knuckle: {} -> {}({})",
                         knuckle_node_id, child_node_id, new_node_label
                     );
                 } else {
+                    #[cfg(debug_assertions)]
                     println!(
                         "Removing knuckle: {} -> {}",
                         knuckle_node_id, child_node_id
                     );
                 }
 
-                self.yank_node(knuckle_node_id);
+                _ = self.yank_node(knuckle_node_id);
             }
         }
     }
 
-    pub fn validate(
+    pub fn validate(&mut self) -> Result<NodeId, TreeError> {
+        self.validate_internal(false)
+    }
+
+    pub(crate) fn validate_internal(
         &mut self,
-        make_fresh_edges: bool,
         knuckle_removal_pass: bool,
     ) -> Result<NodeId, TreeError> {
         let mut count_of_unset: usize = 0;
@@ -302,7 +335,7 @@ impl<'a> Tree {
             for putative_knuckle_node_id in unset_node_ids {
                 self.remove_knuckle(putative_knuckle_node_id);
             }
-            return self.validate(make_fresh_edges, true);
+            return self.validate_internal(true);
         }
 
         // Count of "unset_node_ids" should be 0 after knuckle removal.
@@ -310,7 +343,7 @@ impl<'a> Tree {
         // account for something.
         for node_id in unset_node_ids {
             let node = self.node(Some(node_id));
-            let child_nodes = self.children(node_id);
+            let child_nodes = self.child_nodes(node_id);
             println!("------        Node:\n{node:#?}");
             println!("------ Child Nodes:\n{child_nodes:#?}");
         }
@@ -336,13 +369,16 @@ impl<'a> Tree {
             node.set_branch_length(None);
         }
 
-        if make_fresh_edges {
-            self.rebuild_edges();
-        }
-
         self.validate_and_unify_attribute_types()?;
 
-        Ok(self.first_node_id.unwrap())
+        if let Some(first_node_id) = self.first_node_id() {
+            Ok(first_node_id)
+        } else {
+            Err(TreeError::InvalidTree(
+                "The value of first_node_id is None; This should never happen."
+                    .to_string(),
+            ))
+        }
     }
 
     /// Validates and unifies attribute types across all nodes to ensure consistency.
@@ -503,10 +539,6 @@ impl<'a> Tree {
         }
     }
 
-    // =========================================================================
-    // Tree Properties
-    // =========================================================================
-
     pub fn has_tip_labels(&self) -> bool {
         for n in self.nodes.values() {
             if n.is_tip() && n.node_label().is_some() {
@@ -580,7 +612,7 @@ impl<'a> Tree {
             let tip_ids = self.tip_node_ids_all();
 
             // Use parallel processing for larger trees
-            if tip_ids.len() > 100 {
+            if tip_ids.len() > 1000 {
                 tip_ids
                     .par_iter()
                     .map(|right| self.distance(id, *right))
@@ -605,12 +637,10 @@ impl<'a> Tree {
             return 0.0;
         }
 
-        // For now, keep the original implementation as memoization would require &mut self
-        // TODO: Consider using RefCell for interior mutability if memoization is needed
         let mut total_distance: TreeFloat = 0.0;
         total_distance += self.branch_length(right_node_id).unwrap_or(0.0);
 
-        if let Some(parent_node_id) = self.parent_id(right_node_id) {
+        if let Some(parent_node_id) = self.parent_node_id(right_node_id) {
             if parent_node_id != left_node_id {
                 total_distance += self.distance(left_node_id, parent_node_id);
             }
@@ -630,10 +660,6 @@ impl<'a> Tree {
     pub fn node_count_all(&self) -> usize {
         self.node_count_all
     }
-
-    // =========================================================================
-    // Node Access
-    // =========================================================================
 
     pub fn node(&self, node_id: Option<NodeId>) -> Option<&Node> {
         if let Some(node_id) = node_id { self.nodes.get(node_id) } else { None }
@@ -674,22 +700,18 @@ impl<'a> Tree {
     }
 
     pub fn label(&self, node_id: NodeId) -> Option<Arc<str>> {
-        self.nodes[node_id].node_label()
+        self.node(Some(node_id))?.node_label()
     }
 
     pub fn branch_length(&self, node_id: NodeId) -> Option<TreeFloat> {
         if self.has_branch_lengths {
-            self.nodes[node_id].branch_length()
+            self.node(Some(node_id))?.branch_length()
         } else if Some(node_id) == self.first_node_id() {
             None
         } else {
             Some(1e0)
         }
     }
-
-    // =========================================================================
-    // Tree Traversal
-    // =========================================================================
 
     pub fn path(
         &self,
@@ -703,7 +725,7 @@ impl<'a> Tree {
         let mut path = Vec::new();
         let mut current_node_id = right_node_id;
 
-        while let Some(parent_node_id) = self.parent_id(current_node_id) {
+        while let Some(parent_node_id) = self.parent_node_id(current_node_id) {
             if parent_node_id == left_node_id {
                 break;
             }
@@ -714,41 +736,43 @@ impl<'a> Tree {
         path
     }
 
-    pub fn parent_id(&self, node_id: NodeId) -> Option<NodeId> {
-        self.nodes[node_id].parent_id()
+    pub fn parent_node_id(&self, node_id: NodeId) -> Option<NodeId> {
+        self.node(Some(node_id))?.parent_id()
     }
 
-    pub fn child_ids(&self, node_id: NodeId) -> &[NodeId] {
-        self.nodes[node_id].child_ids()
-    }
-
-    pub fn first_child_id(&self, node_id: NodeId) -> Option<&NodeId> {
-        self.child_ids(node_id).first()
-    }
-
-    pub fn last_child_id(&self, node_id: NodeId) -> Option<&NodeId> {
-        self.child_ids(node_id).last()
-    }
-
-    pub fn children(&self, node_id: NodeId) -> Vec<&Node> {
-        let mut result = Vec::new();
-        for &child_id in self.child_ids(node_id) {
-            let child_node = &self.nodes[child_id];
-            result.push(child_node);
+    pub fn child_node_ids(&self, node_id: NodeId) -> &[NodeId] {
+        if let Some(node) = self.node(Some(node_id)) {
+            node.child_ids()
+        } else {
+            &[]
         }
-        result
     }
 
-    pub fn child_count(&self, node_id: NodeId) -> usize {
+    pub fn first_child_node_id(&self, node_id: NodeId) -> Option<&NodeId> {
+        self.child_node_ids(node_id).first()
+    }
+
+    pub fn last_child_node_id(&self, node_id: NodeId) -> Option<&NodeId> {
+        self.child_node_ids(node_id).last()
+    }
+
+    pub fn child_nodes(&self, node_id: NodeId) -> Vec<&Node> {
+        self.child_node_ids(node_id)
+            .iter()
+            .map(|&child_id| &self.nodes[child_id])
+            .collect()
+    }
+
+    pub fn child_node_count(&self, node_id: NodeId) -> usize {
         self.nodes[node_id].child_node_count()
     }
 
-    pub fn child_count_recursive(&self, node_id: NodeId) -> usize {
-        let children = self.child_ids(node_id);
+    pub fn child_node_count_recursive(&self, node_id: NodeId) -> usize {
+        let children = self.child_node_ids(node_id);
         children.len()
             + children
                 .iter()
-                .map(|&child_id| self.child_count_recursive(child_id))
+                .map(|&child_id| self.child_node_count_recursive(child_id))
                 .sum::<usize>()
     }
 
@@ -762,7 +786,7 @@ impl<'a> Tree {
         result
     }
 
-    pub fn tip_node_ids_recursive(
+    fn tip_node_ids_recursive(
         &self,
         node_id: NodeId,
         result: &mut Vec<NodeId>,
@@ -770,7 +794,7 @@ impl<'a> Tree {
         if self.is_tip(node_id) {
             result.push(node_id);
         } else {
-            for child_id in self.child_ids(node_id) {
+            for child_id in self.child_node_ids(node_id) {
                 self.tip_node_ids_recursive(*child_id, result);
             }
         }
@@ -784,11 +808,11 @@ impl<'a> Tree {
         }
     }
 
-    pub fn tip_count_recursive(&self, node_id: NodeId) -> usize {
+    pub fn tip_node_count_recursive(&self, node_id: NodeId) -> usize {
         let mut count: usize = 0;
-        for &child_id in self.child_ids(node_id) {
+        for &child_id in self.child_node_ids(node_id) {
             if !self.is_tip(child_id) {
-                count += self.tip_count_recursive(child_id);
+                count += self.tip_node_count_recursive(child_id);
             } else {
                 count += 1;
             }
@@ -796,9 +820,9 @@ impl<'a> Tree {
         count
     }
 
-    pub fn tip_count(&self, node_id: NodeId) -> usize {
+    pub fn tip_node_count(&self, node_id: NodeId) -> usize {
         let mut count: usize = 0;
-        for child_node in self.children(node_id) {
+        for child_node in self.child_nodes(node_id) {
             if child_node.is_tip() {
                 count += 1;
             }
@@ -806,33 +830,29 @@ impl<'a> Tree {
         count
     }
 
-    pub fn bounding_tip_ids_for_clade(
+    pub fn bounding_tip_node_ids_for_clade(
         &'a self,
         node_id: NodeId,
     ) -> (NodeId, NodeId) {
         (
-            self.first_tip_id_for_clade(node_id),
-            self.last_tip_id_for_clade(node_id),
+            self.first_tip_node_id_for_clade(node_id),
+            self.last_tip_node_id_for_clade(node_id),
         )
     }
 
-    pub fn first_tip_id_for_clade(&'a self, node_id: NodeId) -> NodeId {
-        match self.first_child_id(node_id) {
-            Some(child_id) => self.first_tip_id_for_clade(*child_id),
+    pub fn first_tip_node_id_for_clade(&'a self, node_id: NodeId) -> NodeId {
+        match self.first_child_node_id(node_id) {
+            Some(child_id) => self.first_tip_node_id_for_clade(*child_id),
             None => node_id,
         }
     }
 
-    pub fn last_tip_id_for_clade(&'a self, node_id: NodeId) -> NodeId {
-        match self.last_child_id(node_id) {
-            Some(child_id) => self.last_tip_id_for_clade(*child_id),
+    pub fn last_tip_node_id_for_clade(&'a self, node_id: NodeId) -> NodeId {
+        match self.last_child_node_id(node_id) {
+            Some(child_id) => self.last_tip_node_id_for_clade(*child_id),
             None => node_id,
         }
     }
-
-    // =========================================================================
-    // Rooting Operations
-    // =========================================================================
 
     pub fn is_rooted(&self) -> bool {
         if let Some(node) = self.node(self.first_node_id()) {
@@ -847,7 +867,7 @@ impl<'a> Tree {
                 return false;
             }
             if self.is_rooted() {
-                let bad_outgroups = self.child_ids(first_node_id);
+                let bad_outgroups = self.child_node_ids(first_node_id);
                 if bad_outgroups.contains(&node_id) {
                     return false;
                 }
@@ -861,7 +881,9 @@ impl<'a> Tree {
             return Err(TreeError::InvalidOutgroupNode(node_id));
         }
 
-        let yanked_node = self.unroot();
+        // Only unroot if the tree is currently rooted
+        let yanked_node_opt =
+            if self.is_rooted() { Some(self.unroot()?) } else { None };
 
         if let Some(left_node_id) = self.first_node_id {
             let new_root_id = self
@@ -923,7 +945,7 @@ impl<'a> Tree {
                 .node_label()
                 .map(|node_label| node_label.to_string());
 
-            if let Some(yanked_node) = yanked_node
+            if let Some(yanked_node) = yanked_node_opt
                 && let Some(label) = yanked_node.node_label()
             {
                 new_node_label = Some(label.to_string());
@@ -949,9 +971,10 @@ impl<'a> Tree {
             let node_id_to_ignore: NodeId =
                 if !path.is_empty() { path[path.len() - 1] } else { node_id };
 
-            let temporary_child_ids = self.child_ids(left_node_id).to_vec();
+            let temporary_child_node_ids =
+                self.child_node_ids(left_node_id).to_vec();
 
-            for child_node_id in temporary_child_ids {
+            for child_node_id in temporary_child_node_ids {
                 if child_node_id != node_id_to_ignore {
                     self.nodes[new_last].add_child_id(child_node_id);
                     self.nodes[child_node_id].set_parent_id(Some(new_last));
@@ -961,19 +984,76 @@ impl<'a> Tree {
         }
 
         self.edges = None;
-        self.validate(true, false)
+        let validation_result = self.validate()?;
+        self.rebuild_edges();
+        Ok(validation_result)
     }
 
-    pub fn unroot(&mut self) -> Option<Node> {
-        let mut yanked_node: Option<Node> = None;
-        if let Some(node_to_drop_id) = self.select_root_child_node_to_drop() {
-            self.slide_brlen_through_root(node_to_drop_id);
-            yanked_node = self.node(Some(node_to_drop_id)).cloned();
-            self.yank_node(node_to_drop_id);
-            self.edges = None;
-            let _ = self.validate(true, false);
+    /// Converts a rooted tree to an unrooted tree by removing one root child node.
+    ///
+    /// This operation transforms a rooted tree into an unrooted tree by
+    /// removing one of the root's two children. The branch length from the removed
+    /// node is transferred to its sibling to preserve total distances in the tree.
+    ///
+    /// **Prerequisites:**
+    /// - Tree must be rooted (`is_rooted()` returns `true`)
+    /// - Root must have exactly two children
+    /// - At least one root child must not be a tip
+    ///
+    /// **Operation process:**
+    /// 1. **Node selection**: Selects which root child to remove using
+    ///    `select_root_child_node_to_drop()`:
+    ///    - If one child is a tip, drops the non-tip child
+    ///    - If neither child is a tip, drops the one with more descending tips
+    /// 2. **Branch length preservation**: Calls `slide_brlen_through_root()` to
+    ///    transfer the source node's branch length to its sibling, preserving total
+    ///    distance
+    /// 3. **Node removal**: Calls `yank_node()` to remove the selected node and
+    ///    connect its children directly to the root
+    /// 4. **Tree maintenance**: Invalidates edges, validates the tree structure,
+    ///    and rebuilds edges
+    ///
+    /// **Example transformation:**
+    /// ```text
+    /// Before unrooting (rooted):      After unrooting (unrooted):
+    ///         Root                           FirstNode
+    ///        /    \                         /  |  |  \
+    ///    A(0.1)  B(0.2)          -->    A(0.3) F  G   H
+    ///      /|\     /|\                    /|\
+    ///     C D E   F G H                  C D E
+    ///
+    /// Node B is removed, and its branch length (0.2) is added to A's branch
+    /// length (0.1), resulting in A having branch length 0.3. B's children
+    /// (F, G, H) become direct children of the Root. The Root now has 4 children,
+    /// making the tree unrooted.
+    /// ```
+    ///
+    /// **Returns:**
+    /// - `Ok(Node)` - The yanked node that was removed from the tree
+    /// - `Err(TreeError::UnrootedTree)` - If the tree is already unrooted
+    /// - `Err(TreeError::ChildNodeCountIsNotTwo)` - If root doesn't have exactly
+    ///   two children
+    /// - `Err(TreeError::BothChildNodesAreTips)` - If both root children are tips
+    /// - `Err(TreeError::FailedToObtainMutableReferenceToNode)` - If nodes cannot
+    ///   be accessed during the operation
+    /// - Other `TreeError` variants from `yank_node()` or `validate()`
+    ///
+    /// **Note:**
+    ///
+    /// This operation modifies the tree structure and invalidates cached edges.
+    /// The tree is automatically validated and edges are rebuilt after unrooting.
+    pub fn unroot(&mut self) -> Result<Node, TreeError> {
+        match self.select_root_child_node_to_drop() {
+            Ok(node_to_drop_id) => {
+                self.slide_brlen_through_root(node_to_drop_id);
+                let yanked_node = self.yank_node(node_to_drop_id)?;
+                self.edges = None;
+                _ = self.validate()?;
+                self.rebuild_edges();
+                Ok(yanked_node)
+            }
+            Err(err) => Err(err),
         }
-        yanked_node
     }
 
     /// Removes a node from the tree while preserving the tree structure by
@@ -1011,12 +1091,18 @@ impl<'a> Tree {
     /// **Arguments:**
     /// - `node_id` - The ID of the node to remove from the tree
     ///
+    /// **Returns:**
+    /// - `Ok(Node)` - The yanked node on success
+    /// - `Err(TreeError::NodeDoesNotExist)` - If the node doesn't exist
+    /// - `Err(TreeError::NodeDoesNotHaveParent)` - If the node has no parent
+    /// - `Err(TreeError::FailedToObtainMutableReferenceToNode)` - If the parent
+    ///   or any child node cannot be accessed via `get_mut()`
+    ///
     /// **Safety:**
     ///
-    /// This function uses safe node access patterns with `get_mut()` and
-    /// handles cases where nodes might not exist gracefully. If the parent node
-    /// or any child nodes cannot be accessed, those operations are silently
-    /// skipped.
+    /// This function uses safe node access patterns with `get_mut()`. If the
+    /// parent node or any child nodes cannot be accessed via `get_mut()`, the
+    /// function returns an error rather than silently skipping operations.
     ///
     /// **Note:**
     ///
@@ -1024,26 +1110,41 @@ impl<'a> Tree {
     /// attributes.If branch length preservation is needed, it should be handled
     /// by the caller before calling this function.
     ///
-    fn yank_node(&mut self, node_id: NodeId) {
-        let child_ids = self.child_ids(node_id).to_vec();
+    fn yank_node(&mut self, node_id: NodeId) -> Result<Node, TreeError> {
         if let Some(parent_node_id) = self.nodes[node_id].parent_id() {
-            let parent_node_id: NodeId = parent_node_id;
+            let child_node_ids = self.child_node_ids(node_id).to_owned();
+
+            let yanked_node = self
+                .nodes
+                .remove(node_id)
+                .ok_or(TreeError::NodeDoesNotExist(node_id))?;
 
             if let Some(parent_node) = self.nodes.get_mut(parent_node_id) {
                 parent_node.remove_child_id(node_id);
 
-                for &child_id in &child_ids {
-                    parent_node.add_child_id(child_id);
+                for &child_node_id in &child_node_ids {
+                    parent_node.add_child_id(child_node_id);
                 }
+            } else {
+                return Err(TreeError::FailedToObtainMutableReferenceToNode(
+                    node_id,
+                ));
             }
 
-            for &child_id in &child_ids {
-                if let Some(child_node) = self.nodes.get_mut(child_id) {
+            for &child_node_id in &child_node_ids {
+                if let Some(child_node) = self.nodes.get_mut(child_node_id) {
                     child_node.set_parent_id(Some(parent_node_id));
+                } else {
+                    return Err(
+                        TreeError::FailedToObtainMutableReferenceToNode(
+                            child_node_id,
+                        ),
+                    );
                 }
             }
-
-            _ = self.nodes.remove(node_id);
+            Ok(yanked_node)
+        } else {
+            Err(TreeError::NodeDoesNotHaveParent(node_id))
         }
     }
 
@@ -1058,20 +1159,21 @@ impl<'a> Tree {
     /// **Prerequisites:**
     /// - Tree must be rooted (`is_rooted()` returns `true`)
     /// - Tree must have branch lengths (`has_branch_lengths` is `true`)
+    /// - Both source and receive nodes must have branch lengths (function uses
+    ///   `unwrap()`)
     ///
     /// **Operation process:**
     /// 1. **Validation**: Returns early if tree is unrooted or lacks branch lengths
     /// 2. **Sibling identification**: Finds the sibling of the source node among root's children
     /// 3. **Branch length calculation**: Combines source and receive node branch lengths
     /// 4. **Length redistribution**:
-    ///    - Sets source node branch length to 0.0 (will be removed anyway)
+    ///    - Sets source node branch length to `Some(0.0)`
     ///    - Transfers combined length to the receive node
     ///
     /// **Branch length combination logic:**
-    /// - If both nodes have branch lengths: `new_length = source_length + receive_length`
-    /// - If only source has length: `new_length = source_length`
-    /// - If only receive has length: `new_length = receive_length` (unchanged)
-    /// - If neither has length: no change (both remain `None`)
+    /// - Assumes both source and receive nodes have branch lengths (uses `unwrap()`).
+    /// - Calculates: `new_length = source_length + receive_length`
+    /// - Sets source branch length to `Some(0.0)` and receive branch length to `new_length`
     ///
     /// **Example transformation:**
     /// ```text
@@ -1116,9 +1218,9 @@ impl<'a> Tree {
 
         let mut receive_node_id: NodeId = source_node_id;
         if let Some(first_node_id) = self.first_node_id() {
-            for &other_id in self.child_ids(first_node_id) {
-                if other_id != source_node_id {
-                    receive_node_id = other_id;
+            for &other_node_id in self.child_node_ids(first_node_id) {
+                if other_node_id != source_node_id {
+                    receive_node_id = other_node_id;
                     break;
                 }
             }
@@ -1126,7 +1228,7 @@ impl<'a> Tree {
 
         if source_node_id == receive_node_id {
             println!(
-                "This should not have happened: source_node_id == receive_node_id"
+                "slide_brlen_through_root: This should not have happened: source_node_id == receive_node_id."
             );
             return;
         }
@@ -1134,34 +1236,36 @@ impl<'a> Tree {
         let source_node = &self.nodes[source_node_id];
         let receive_node = &self.nodes[receive_node_id];
 
-        let mut new_brlen: TreeFloat = 0e0;
-        if let Some(source_brlen) = source_node.branch_length() {
-            if let Some(receive_brlen) = receive_node.branch_length() {
-                new_brlen = receive_brlen + source_brlen;
-            } else {
-                new_brlen = source_brlen;
-            }
-        }
+        let source_brlen = source_node.branch_length().unwrap();
+        let receive_brlen = receive_node.branch_length().unwrap();
+        let new_brlen = receive_brlen + source_brlen;
 
-        self.nodes[source_node_id].set_branch_length(Some(0e0));
+        self.nodes[source_node_id].set_branch_length(Some(0.0));
         self.nodes[receive_node_id].set_branch_length(Some(new_brlen));
     }
 
-    fn select_root_child_node_to_drop(&self) -> Option<NodeId> {
+    fn select_root_child_node_to_drop(&self) -> Result<NodeId, TreeError> {
         if !self.is_rooted() {
-            return None;
+            return Err(TreeError::UnrootedTree);
         }
         if let Some(root_node) = self.node(self.first_node_id)
             && root_node.child_node_count() != 2
         {
-            return None;
+            return Err(TreeError::ChildNodeCountIsNotTwo {
+                node_id: root_node.node_id().unwrap(),
+                child_node_count: root_node.child_node_count(),
+            });
         }
-        let root_child_nodes = self.children(self.first_node_id.unwrap());
+        let root_child_nodes = self.child_nodes(self.first_node_id.unwrap());
         let child_node_1 = root_child_nodes[0];
         let child_node_2 = root_child_nodes[1];
 
         if child_node_1.is_tip() && child_node_2.is_tip() {
-            return None;
+            return Err(TreeError::BothChildNodesAreTips {
+                parent_node_id: self.first_node_id.unwrap(),
+                child1_node_id: child_node_1.node_id().unwrap(),
+                child2_node_id: child_node_2.node_id().unwrap(),
+            });
         }
 
         // At this point we know that at most one of child_node_1 and
@@ -1180,9 +1284,9 @@ impl<'a> Tree {
             // child_node_1 or child_node_2 are tips. Arbitrarily drop the one
             // with more total descending tips.
             let tip_count_1 =
-                self.tip_count_recursive(child_node_1.node_id().unwrap());
+                self.tip_node_count_recursive(child_node_1.node_id().unwrap());
             let tip_count_2 =
-                self.tip_count_recursive(child_node_2.node_id().unwrap());
+                self.tip_node_count_recursive(child_node_2.node_id().unwrap());
 
             if tip_count_1 > tip_count_2 {
                 node_to_drop = child_node_1;
@@ -1191,21 +1295,15 @@ impl<'a> Tree {
             }
         }
 
-        node_to_drop.node_id()
+        Ok(node_to_drop.node_id().unwrap())
     }
-
-    // =========================================================================
-    // Edge Operations
-    // =========================================================================
 
     fn needs_edge_rebuild(&self) -> bool {
         self.edges.is_none()
     }
 
-    fn rebuild_edges(&mut self) {
-        if let Some(_) = self.first_node_id
-            && self.needs_edge_rebuild()
-        {
+    pub(crate) fn rebuild_edges(&mut self) {
+        if self.first_node_id.is_some() && self.needs_edge_rebuild() {
             let mut edges = prepare_edges(self);
 
             for (edge_index, edge) in edges.iter_mut().enumerate() {
@@ -1235,7 +1333,7 @@ impl<'a> Tree {
 
         let edges = self.edges()?;
         let (tip_node_id_0, tip_node_id_1) =
-            self.bounding_tip_ids_for_clade(node_id);
+            self.bounding_tip_node_ids_for_clade(node_id);
         let start: &Edge =
             &edges[self.edge_index_for_node_id(tip_node_id_0)?];
         let end: &Edge = &edges[self.edge_index_for_node_id(tip_node_id_1)?];
@@ -1254,7 +1352,7 @@ impl<'a> Tree {
         let edges = self.edges()?;
 
         let (top_tip_node_id, bottom_tip_node_id) =
-            self.bounding_tip_ids_for_clade(node_id);
+            self.bounding_tip_node_ids_for_clade(node_id);
 
         let mut edges_top: Vec<Edge> = Vec::new();
         let mut edges_bottom: Vec<Edge> = Vec::new();
@@ -1282,10 +1380,6 @@ impl<'a> Tree {
         Some((edges_top, edges_bottom))
     }
 
-    // =========================================================================
-    // Tree Manipulation
-    // =========================================================================
-
     pub fn sort(&mut self, reverse: bool) {
         if let Some(node_id) = self.first_node_id {
             self.sort_nodes(node_id, reverse);
@@ -1294,16 +1388,16 @@ impl<'a> Tree {
         }
     }
 
-    pub fn sorted(tree: &Self, reverse: bool) -> Self {
-        let mut temporary_tree = tree.clone();
-        temporary_tree.sort(reverse);
-        temporary_tree
+    pub fn sorted_clone(tree: &Self, reverse: bool) -> Self {
+        let mut tree_cloned = tree.clone();
+        tree_cloned.sort(reverse);
+        tree_cloned
     }
 
     fn sort_nodes(&mut self, node_id: NodeId, reverse: bool) {
         let mut sorted_ids: Vec<NodeId> =
             self.nodes[node_id].child_ids().to_vec();
-        sorted_ids.par_sort_by_key(|&c| self.child_count_recursive(c));
+        sorted_ids.par_sort_by_key(|&c| self.child_node_count_recursive(c));
         if reverse {
             sorted_ids.reverse();
         }
@@ -1312,10 +1406,6 @@ impl<'a> Tree {
         }
         self.nodes[node_id].set_child_ids(sorted_ids);
     }
-
-    // =========================================================================
-    // Attributes
-    // =========================================================================
 
     pub fn branch_attributes(
         &'a self,
@@ -1352,10 +1442,6 @@ impl<'a> Tree {
         }
         result.into_iter().collect()
     }
-
-    // =========================================================================
-    // Attribute Management
-    // =========================================================================
 
     /// Rename a node attribute key across all nodes that have it.
     ///
@@ -1438,7 +1524,7 @@ impl<'a> Tree {
     ///
     /// Returns:
     /// * `Ok(())` - Success
-    /// * `Err(TreeError::ParentNodeDoesNotExist)` - If node doesn't exist
+    /// * `Err(TreeError::NodeDoesNotExist)` - If node doesn't exist
     /// * `Err(TreeError::AttributeNotFound)` - If attribute doesn't exist on node
     /// * `Err(TreeError::AttributeTypeMismatch)` - If new value type is incompatible
     pub fn change_node_attribute_value(
@@ -1448,7 +1534,7 @@ impl<'a> Tree {
         new_value: Attribute,
     ) -> Result<(), TreeError> {
         if !self.node_exists(Some(node_id)) {
-            return Err(TreeError::ParentNodeDoesNotExist(node_id));
+            return Err(TreeError::NodeDoesNotExist(node_id));
         }
 
         // Check if the attribute exists on the node
@@ -1458,11 +1544,14 @@ impl<'a> Tree {
             .node_attributes()
             .contains_key(key)
         {
-            return Err(TreeError::AttributeNotFound(key.to_string(), node_id));
+            return Err(TreeError::AttributeNotFound {
+                attribute_key: key.to_string(),
+                node_id,
+            });
         }
 
         // Get the unified type for this attribute key across all nodes.
-        let unified_type = self.get_unified_type_for_key(key, false);
+        let unified_type = self.get_unified_attribute_type_for_key(key, false);
 
         // Get mutable reference to the node.
         let node = self.node_mut(Some(node_id)).unwrap();
@@ -1471,10 +1560,10 @@ impl<'a> Tree {
             // Validate that new_value can be converted to the unified type.
             let new_value_type = new_value.get_type();
             if !Attribute::can_unify_types(&new_value_type, &unified_type) {
-                return Err(TreeError::AttributeTypeMismatch(
-                    format!("{:?}", new_value_type),
-                    format!("{:?}", unified_type),
-                ));
+                return Err(TreeError::AttributeTypeMismatch {
+                    attribute_type_from: new_value_type,
+                    attribute_type_to: unified_type,
+                });
             }
 
             // Convert new_value if needed.
@@ -1507,7 +1596,7 @@ impl<'a> Tree {
     ///
     /// Returns:
     /// * `Ok(())` - Success
-    /// * `Err(TreeError::ParentNodeDoesNotExist)` - If node doesn't exist
+    /// * `Err(TreeError::NodeDoesNotExist)` - If node doesn't exist
     /// * `Err(TreeError::AttributeNotFound)` - If attribute doesn't exist on node
     /// * `Err(TreeError::AttributeTypeMismatch)` - If new value type is incompatible
     pub fn change_branch_attribute_value(
@@ -1517,7 +1606,7 @@ impl<'a> Tree {
         new_value: Attribute,
     ) -> Result<(), TreeError> {
         if !self.node_exists(Some(node_id)) {
-            return Err(TreeError::ParentNodeDoesNotExist(node_id));
+            return Err(TreeError::NodeDoesNotExist(node_id));
         }
 
         // Check if the attribute exists on the node
@@ -1527,11 +1616,14 @@ impl<'a> Tree {
             .branch_attributes()
             .contains_key(key)
         {
-            return Err(TreeError::AttributeNotFound(key.to_string(), node_id));
+            return Err(TreeError::AttributeNotFound {
+                attribute_key: key.to_string(),
+                node_id,
+            });
         }
 
         // Get the unified type for this attribute key across all nodes
-        let unified_type = self.get_unified_type_for_key(key, true);
+        let unified_type = self.get_unified_attribute_type_for_key(key, true);
 
         // Get mutable reference to the node
         let node = self.node_mut(Some(node_id)).unwrap();
@@ -1540,10 +1632,10 @@ impl<'a> Tree {
             // Validate that new_value can be converted to the unified type
             let new_value_type = new_value.get_type();
             if !Attribute::can_unify_types(&new_value_type, &unified_type) {
-                return Err(TreeError::AttributeTypeMismatch(
-                    format!("{:?}", new_value_type),
-                    format!("{:?}", unified_type),
-                ));
+                return Err(TreeError::AttributeTypeMismatch {
+                    attribute_type_from: new_value_type,
+                    attribute_type_to: unified_type,
+                });
             }
 
             // Convert new_value if needed
@@ -1568,7 +1660,7 @@ impl<'a> Tree {
     }
 
     /// Gets the unified type for a specific attribute key across all nodes.
-    fn get_unified_type_for_key(
+    fn get_unified_attribute_type_for_key(
         &self,
         key: &str,
         is_branch: bool,
@@ -1599,10 +1691,6 @@ impl<'a> Tree {
         }
         Some(unified_type)
     }
-
-    // =========================================================================
-    // Display
-    // =========================================================================
 
     fn print_tree(&self) -> String {
         let mut result: String = String::new();
@@ -1742,7 +1830,7 @@ mod tests {
         assert_eq!(tree.label(child_id).as_deref(), Some("child"));
         assert_eq!(tree.branch_length(knuckle_id), Some(0.1));
         assert_eq!(tree.branch_length(child_id), Some(0.2));
-        assert_eq!(tree.child_ids(knuckle_id).len(), 1);
+        assert_eq!(tree.child_node_ids(knuckle_id).len(), 1);
 
         // Remove the knuckle
         tree.remove_knuckle(knuckle_id);
@@ -1751,8 +1839,8 @@ mod tests {
         assert!(!tree.node_exists(Some(knuckle_id)));
 
         // Verify child node is now connected to root
-        assert_eq!(tree.parent_id(child_id), Some(root_id));
-        assert!(tree.child_ids(root_id).contains(&child_id));
+        assert_eq!(tree.parent_node_id(child_id), Some(root_id));
+        assert!(tree.child_node_ids(root_id).contains(&child_id));
 
         // Verify branch length is combined
         let expected = 0.3; // 0.1 + 0.2
@@ -1835,7 +1923,7 @@ mod tests {
 
         // Verify knuckle is removed and child is connected to root
         assert!(!tree.node_exists(Some(knuckle_id)));
-        assert_eq!(tree.parent_id(child_id), Some(root_id));
+        assert_eq!(tree.parent_node_id(child_id), Some(root_id));
 
         // Verify label remains None
         assert_eq!(tree.label(child_id), None);
@@ -1902,7 +1990,7 @@ mod tests {
         tree.has_branch_lengths = true;
 
         // Verify it's a leaf (no children)
-        assert_eq!(tree.child_ids(leaf_id).len(), 0);
+        assert_eq!(tree.child_node_ids(leaf_id).len(), 0);
         assert!(tree.node_exists(Some(leaf_id)));
 
         // Try to remove as knuckle - should do nothing
@@ -1918,7 +2006,7 @@ mod tests {
         let (mut tree, _root_id, internal_id) = create_non_knuckle_test_tree();
 
         // Verify it has multiple children (not a knuckle)
-        assert_eq!(tree.child_ids(internal_id).len(), 2);
+        assert_eq!(tree.child_node_ids(internal_id).len(), 2);
         assert!(tree.node_exists(Some(internal_id)));
 
         // Try to remove as knuckle - should do nothing
@@ -1927,7 +2015,7 @@ mod tests {
         // Node should still exist since it's not a knuckle
         assert!(tree.node_exists(Some(internal_id)));
         assert_eq!(tree.label(internal_id).as_deref(), Some("internal"));
-        assert_eq!(tree.child_ids(internal_id).len(), 2);
+        assert_eq!(tree.child_node_ids(internal_id).len(), 2);
     }
 
     #[test]
@@ -1941,19 +2029,19 @@ mod tests {
             .unwrap();
 
         // Verify initial tree structure: root -> knuckle -> child -> grandchild
-        assert_eq!(tree.parent_id(knuckle_id), Some(root_id));
-        assert_eq!(tree.parent_id(child_id), Some(knuckle_id));
-        assert_eq!(tree.parent_id(grandchild_id), Some(child_id));
+        assert_eq!(tree.parent_node_id(knuckle_id), Some(root_id));
+        assert_eq!(tree.parent_node_id(child_id), Some(knuckle_id));
+        assert_eq!(tree.parent_node_id(grandchild_id), Some(child_id));
 
         // Remove knuckle
         tree.remove_knuckle(knuckle_id);
 
         // Verify new tree structure: root -> child -> grandchild
         assert!(!tree.node_exists(Some(knuckle_id)));
-        assert_eq!(tree.parent_id(child_id), Some(root_id));
-        assert_eq!(tree.parent_id(grandchild_id), Some(child_id));
-        assert!(tree.child_ids(root_id).contains(&child_id));
-        assert!(tree.child_ids(child_id).contains(&grandchild_id));
+        assert_eq!(tree.parent_node_id(child_id), Some(root_id));
+        assert_eq!(tree.parent_node_id(grandchild_id), Some(child_id));
+        assert!(tree.child_node_ids(root_id).contains(&child_id));
+        assert!(tree.child_node_ids(child_id).contains(&grandchild_id));
     }
 
     #[test]
@@ -1967,7 +2055,7 @@ mod tests {
         // Verify initial state
         assert_eq!(tree.label(knuckle_id).as_deref(), Some("knuckle"));
         assert_eq!(tree.label(child_id).as_deref(), Some("child"));
-        assert_eq!(tree.child_ids(knuckle_id).len(), 1);
+        assert_eq!(tree.child_node_ids(knuckle_id).len(), 1);
 
         // Remove the knuckle
         tree.remove_knuckle(knuckle_id);
@@ -1976,8 +2064,8 @@ mod tests {
         assert!(!tree.node_exists(Some(knuckle_id)));
 
         // Verify child node is now connected to root
-        assert_eq!(tree.parent_id(child_id), Some(root_id));
-        assert!(tree.child_ids(root_id).contains(&child_id));
+        assert_eq!(tree.parent_node_id(child_id), Some(root_id));
+        assert!(tree.child_node_ids(root_id).contains(&child_id));
 
         // Verify label is combined even when branch lengths are not used
         assert_eq!(

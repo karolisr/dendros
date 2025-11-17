@@ -215,12 +215,13 @@ fn split_comma_separated_attributes(s: &str) -> HashMap<String, Attribute> {
 /// Processes a single attribute part and inserts it into the result map.
 ///
 /// This function handles different attribute formats:
-/// - **NHX format keys**: Keys starting with `&NHX:` or `&&NHX:` are processed
-///   as NHX attributes.
 /// - **Generic attributes**: Keys starting with `&` have the prefix stripped.
 /// - **Key-value pairs**: Standard `key=value` format.
 /// - **Unnamed values**: Numeric values are stored as `unnamed_numeric`, others
 ///   as `unnamed_text`.
+///
+/// Note: NHX format attributes are handled by `split_comma_separated_attributes`
+/// before this function is called, so this function never processes NHX format.
 ///
 /// Arguments:
 /// - `part`: A single attribute part (e.g., `key=value`, `100`, `&attr=val`).

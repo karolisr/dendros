@@ -60,7 +60,7 @@ fn create_test_tree() -> Tree {
         node.set_branch_attributes(branch2_attrs);
     }
 
-    let _ = tree.validate(true, false).unwrap();
+    let _ = tree.validate().unwrap();
     tree
 }
 
@@ -246,7 +246,13 @@ fn test_change_attribute_value_incompatible_type_error() {
     let new_value = Attribute::Text("high".to_string());
     let result =
         tree.change_node_attribute_value(child1_id, "support", new_value);
-    assert!(matches!(result, Err(TreeError::AttributeTypeMismatch(_, _))));
+    assert!(matches!(
+        result,
+        Err(TreeError::AttributeTypeMismatch {
+            attribute_type_from: _,
+            attribute_type_to: _
+        })
+    ));
 
     if let Some(node) = tree.node(Some(child1_id)) {
         let attrs = node.node_attributes();
@@ -270,7 +276,10 @@ fn test_change_nonexistent_attribute_error() {
     let new_value = Attribute::Decimal(0.5);
     let result =
         tree.change_node_attribute_value(child1_id, "nonexistent", new_value);
-    assert!(matches!(result, Err(TreeError::AttributeNotFound(_, _))));
+    assert!(matches!(
+        result,
+        Err(TreeError::AttributeNotFound { attribute_key: _, node_id: _ })
+    ));
 }
 
 /// Tests that attempting to modify attributes on a non-existent node produces an error.
@@ -289,7 +298,7 @@ fn test_change_attribute_nonexistent_node_error() {
     let new_value = Attribute::Decimal(0.5);
     let result =
         tree.change_node_attribute_value(fake_node_id, "support", new_value);
-    assert!(matches!(result, Err(TreeError::ParentNodeDoesNotExist(_))));
+    assert!(matches!(result, Err(TreeError::NodeDoesNotExist(_))));
 }
 
 /// Tests that renaming a non-existent attribute key succeeds but affects zero nodes.
@@ -403,7 +412,7 @@ fn test_attribute_type_unification_integer_to_decimal() {
     tree.node_mut(Some(node1_id)).unwrap().set_node_attributes(node1_attrs);
     tree.node_mut(Some(node2_id)).unwrap().set_node_attributes(node2_attrs);
 
-    let result = tree.validate(false, false);
+    let result = tree.validate();
     assert!(result.is_ok(), "Tree validation should succeed");
 
     let node1_attrs = tree.node_attributes(node1_id);
@@ -444,7 +453,7 @@ fn test_attribute_type_validation_incompatible_types() {
     tree.node_mut(Some(node1_id)).unwrap().set_node_attributes(node1_attrs);
     tree.node_mut(Some(node2_id)).unwrap().set_node_attributes(node2_attrs);
 
-    let result = tree.validate(false, false);
+    let result = tree.validate();
     assert!(
         result.is_err(),
         "Tree validation should fail for incompatible types"
@@ -498,7 +507,7 @@ fn test_list_attribute_type_validation() {
     tree.node_mut(Some(node1_id)).unwrap().set_node_attributes(node1_attrs);
     tree.node_mut(Some(node2_id)).unwrap().set_node_attributes(node2_attrs);
 
-    let result = tree.validate(false, false);
+    let result = tree.validate();
     assert!(
         result.is_ok(),
         "Tree validation should succeed for compatible list types"
@@ -552,7 +561,7 @@ fn test_list_attribute_incompatible_lengths() {
     tree.node_mut(Some(node1_id)).unwrap().set_node_attributes(node1_attrs);
     tree.node_mut(Some(node2_id)).unwrap().set_node_attributes(node2_attrs);
 
-    let result = tree.validate(false, false);
+    let result = tree.validate();
     assert!(
         result.is_err(),
         "Tree validation should fail for lists of different lengths"
@@ -588,7 +597,7 @@ fn test_branch_attribute_validation() {
         .unwrap()
         .set_branch_attributes(node2_branch_attrs);
 
-    let result = tree.validate(false, false);
+    let result = tree.validate();
     assert!(
         result.is_ok(),
         "Tree validation should succeed for compatible branch attribute types"
@@ -730,7 +739,7 @@ fn test_complex_tree_attribute_validation() {
     tree.node_mut(Some(tip_ids[0])).unwrap().set_node_attributes(node1_attrs);
     tree.node_mut(Some(tip_ids[1])).unwrap().set_node_attributes(node2_attrs);
 
-    let result = tree.validate(true, false);
+    let result = tree.validate();
     assert!(result.is_ok(), "Complex tree validation should succeed");
 
     let attrs1 = tree.node_attributes(tip_ids[0]);
@@ -1867,6 +1876,7 @@ fn test_standard_format_compliance() {
     for (name, newick_str, expected_tips, expected_total_nodes) in test_cases {
         println!("Testing: {}", name);
         let trees = parse_newick(newick_str.to_string())
+            .ok()
             .unwrap_or_else(|| panic!("Failed to parse tree: {}", name));
 
         assert_eq!(trees.len(), 1, "Should have exactly one tree");
@@ -1946,6 +1956,7 @@ fn test_quoted_labels_and_escaping() {
     for (name, newick_str, expected_labels) in test_cases {
         println!("Testing quotes: {}", name);
         let trees = parse_newick(newick_str.to_string())
+            .ok()
             .unwrap_or_else(|| panic!("Failed to parse tree: {}", name));
 
         let tree = &trees[0];
@@ -2002,6 +2013,7 @@ fn test_branch_annotations_and_attributes() {
     for (name, newick_str, node_with_attrs) in test_cases {
         println!("Testing attributes: {}", name);
         let trees = parse_newick(newick_str.to_string())
+            .ok()
             .unwrap_or_else(|| panic!("Failed to parse tree: {}", name));
 
         let tree = &trees[0];
@@ -2055,9 +2067,10 @@ fn test_rich_format_rooting_annotations() {
 
     for (name, newick_str) in rooting_cases {
         println!("Testing Rich NEWICK rooting: {}", name);
-        let trees = parse_newick(newick_str.to_string()).unwrap_or_else(|| {
-            panic!("Failed to parse Rich NEWICK tree: {}", name)
-        });
+        let trees =
+            parse_newick(newick_str.to_string()).ok().unwrap_or_else(|| {
+                panic!("Failed to parse Rich NEWICK tree: {}", name)
+            });
 
         let tree = &trees[0];
         assert_eq!(tree.tip_count_all(), 4, "Should have 4 tips");
@@ -2095,9 +2108,10 @@ fn test_rich_format_extended_bootstrap() {
 
     for (name, newick_str, expected_tips, expected_nodes) in extended_cases {
         println!("Testing Rich NEWICK extended: {}", name);
-        let trees = parse_newick(newick_str.to_string()).unwrap_or_else(|| {
-            panic!("Failed to parse Rich NEWICK tree: {}", name)
-        });
+        let trees =
+            parse_newick(newick_str.to_string()).ok().unwrap_or_else(|| {
+                panic!("Failed to parse Rich NEWICK tree: {}", name)
+            });
 
         let tree = &trees[0];
 
@@ -2150,6 +2164,7 @@ fn test_nhx_format_support() {
     for (name, newick_str, expected_tips, expected_nodes) in test_cases {
         println!("Testing NHX: {}", name);
         let trees = parse_newick(newick_str.to_string())
+            .ok()
             .unwrap_or_else(|| panic!("Failed to parse NHX tree: {}", name));
 
         let tree = &trees[0];
@@ -2199,9 +2214,10 @@ fn test_comment_processing() {
 
     for (name, newick_str, expected_tips, expected_nodes) in test_cases {
         println!("Testing comments: {}", name);
-        let trees = parse_newick(newick_str.to_string()).unwrap_or_else(|| {
-            panic!("Failed to parse tree with comments: {}", name)
-        });
+        let trees =
+            parse_newick(newick_str.to_string()).ok().unwrap_or_else(|| {
+                panic!("Failed to parse tree with comments: {}", name)
+            });
 
         let tree = &trees[0];
 
@@ -2295,9 +2311,10 @@ fn test_hash_comment_filtering() {
 
     for (name, newick_str, expected_tips, expected_nodes) in test_cases {
         println!("Testing hash comments: {}", name);
-        let trees = parse_newick(newick_str.to_string()).unwrap_or_else(|| {
-            panic!("Failed to parse tree with hash comments: {}", name)
-        });
+        let trees =
+            parse_newick(newick_str.to_string()).ok().unwrap_or_else(|| {
+                panic!("Failed to parse tree with hash comments: {}", name)
+            });
 
         let tree = &trees[0];
 
@@ -2351,6 +2368,7 @@ fn test_edge_cases_and_malformed_inputs() {
     for (name, newick_str, expected_tips, expected_nodes) in valid_edge_cases {
         println!("Testing edge case: {}", name);
         let trees = parse_newick(newick_str.to_string())
+            .ok()
             .unwrap_or_else(|| panic!("Failed to parse edge case: {}", name));
 
         let tree = &trees[0];
@@ -2404,7 +2422,7 @@ fn test_malformed_input_rejection() {
         let result = parse_newick(newick_str.to_string());
 
         assert!(
-            result.is_none(),
+            result.ok().is_none(),
             "Malformed input '{}' should fail to parse but didn't: {}",
             name,
             newick_str
@@ -2413,7 +2431,7 @@ fn test_malformed_input_rejection() {
         println!("Correctly rejected malformed input");
     }
 
-    let empty_result = parse_newick("".to_string());
+    let empty_result = parse_newick("".to_string()).ok();
     assert!(
         empty_result.is_none() || empty_result.unwrap().is_empty(),
         "Empty string should return None or empty vector"
@@ -2457,7 +2475,7 @@ fn test_iqtree_bracket_attributes_with_commas() {
         println!("Testing: {}", name);
         println!("Tree: {}", tree_str);
 
-        let result = parse_newick(tree_str.to_string());
+        let result = parse_newick(tree_str.to_string()).ok();
         match result {
             Some(trees) => {
                 let tip_count = trees[0].tip_count_all();
@@ -3301,7 +3319,7 @@ End;
     );
 
     if let Some(root_id) = star_tree.first_node_id() {
-        let root_children = star_tree.child_ids(root_id).len();
+        let root_children = star_tree.child_node_ids(root_id).len();
         assert_eq!(root_children, 6, "Star tree root should have 6 children");
     }
 
@@ -3333,6 +3351,7 @@ fn test_large_tree_parsing_performance() {
 
         let start_time = std::time::Instant::now();
         let trees = parse_newick(newick_str)
+            .ok()
             .unwrap_or_else(|| panic!("Failed to parse {}-tip tree", size));
         let parse_duration = start_time.elapsed();
 
@@ -3539,9 +3558,10 @@ fn test_basic_polytomy_parsing() {
 
     for (name, newick_str, expected) in test_cases {
         println!("Testing polytomy: {}", name);
-        let trees = parse_newick(newick_str.to_string()).unwrap_or_else(|| {
-            panic!("Failed to parse polytomy tree: {}", name)
-        });
+        let trees =
+            parse_newick(newick_str.to_string()).ok().unwrap_or_else(|| {
+                panic!("Failed to parse polytomy tree: {}", name)
+            });
 
         let tree = &trees[0];
         validate_polytomy_expectations(tree, &expected, name);
@@ -3581,9 +3601,10 @@ fn test_polytomy_branch_length_handling() {
 
     for (name, newick_str, expected_tips, expected_height) in test_cases {
         println!("Testing polytomy with branch lengths: {}", name);
-        let trees = parse_newick(newick_str.to_string()).unwrap_or_else(|| {
-            panic!("Failed to parse polytomy tree with branches: {}", name)
-        });
+        let trees =
+            parse_newick(newick_str.to_string()).ok().unwrap_or_else(|| {
+                panic!("Failed to parse polytomy tree with branches: {}", name)
+            });
 
         let tree = &trees[0];
 
@@ -3634,6 +3655,7 @@ fn test_polytomy_node_degree_analysis() {
     for (name, newick_str, expected_max_degrees) in polytomy_cases {
         println!("Testing node degrees: {}", name);
         let trees = parse_newick(newick_str.to_string())
+            .ok()
             .unwrap_or_else(|| panic!("Failed to parse tree: {}", name));
 
         let tree = &trees[0];
@@ -3685,6 +3707,7 @@ fn test_polytomy_binary_tree_relationship() {
     {
         println!("Testing polytomy preservation: {}", name);
         let trees = parse_newick(newick_str.to_string())
+            .ok()
             .unwrap_or_else(|| panic!("Failed to parse tree: {}", name));
 
         let tree = &trees[0];
@@ -3759,7 +3782,7 @@ fn validate_polytomy_expectations(
     );
 
     if let Some(root_id) = tree.first_node_id() {
-        let actual_root_children = tree.child_ids(root_id).len();
+        let actual_root_children = tree.child_node_ids(root_id).len();
         assert_eq!(
             actual_root_children, expected.root_children,
             "Wrong root children count for {}: expected {}, got {}",
@@ -3778,7 +3801,7 @@ fn validate_polytomy_expectations(
 fn has_multifurcating_nodes(tree: &dendros::Tree) -> bool {
     let all_node_ids = tree.node_ids_all();
     for node_id in all_node_ids {
-        let child_count = tree.child_ids(node_id).len();
+        let child_count = tree.child_node_ids(node_id).len();
         if child_count > 2 {
             return true;
         }
@@ -3792,7 +3815,7 @@ fn analyze_node_degrees(tree: &dendros::Tree) -> NodeDegreeStats {
 
     let all_node_ids = tree.node_ids_all();
     for node_id in all_node_ids {
-        let degree = tree.child_ids(node_id).len();
+        let degree = tree.child_node_ids(node_id).len();
         *degree_counts.entry(degree).or_insert(0) += 1;
         max_degree = max_degree.max(degree);
     }
@@ -3896,6 +3919,7 @@ fn test_tree_topology_and_structure_validation() {
     for (name, newick_str, expected) in test_cases {
         println!("Testing topology: {}", name);
         let trees = parse_newick(newick_str.to_string())
+            .ok()
             .unwrap_or_else(|| panic!("Failed to parse tree: {}", name));
 
         let tree = &trees[0];
@@ -3945,6 +3969,7 @@ fn test_tree_height_calculation_and_tip_distances() {
     {
         println!("Testing tree heights: {}", name);
         let trees = parse_newick(newick_str.to_string())
+            .ok()
             .unwrap_or_else(|| panic!("Failed to parse tree: {}", name));
 
         let tree = &trees[0];
@@ -4007,6 +4032,7 @@ fn test_tree_rooting_status_detection() {
     for (name, newick_str, expected_rooted, expected_tips) in test_cases {
         println!("Testing rooting: {}", name);
         let trees = parse_newick(newick_str.to_string())
+            .ok()
             .unwrap_or_else(|| panic!("Failed to parse tree: {}", name));
 
         let tree = &trees[0];
@@ -4101,6 +4127,7 @@ fn test_branch_length_analysis_and_properties() {
     for (name, newick_str, expected) in test_cases {
         println!("Testing branch lengths: {}", name);
         let trees = parse_newick(newick_str.to_string())
+            .ok()
             .unwrap_or_else(|| panic!("Failed to parse tree: {}", name));
 
         let tree = &trees[0];
@@ -4183,6 +4210,7 @@ fn test_node_labeling_and_property_analysis() {
     {
         println!("Testing node labels: {}", name);
         let trees = parse_newick(newick_str.to_string())
+            .ok()
             .unwrap_or_else(|| panic!("Failed to parse tree: {}", name));
 
         let tree = &trees[0];
@@ -4379,7 +4407,7 @@ fn calculate_tree_height(tree: &Tree) -> f64 {
 }
 
 fn calculate_node_height(tree: &Tree, node_id: dendros::NodeId) -> f64 {
-    let children = tree.children(node_id);
+    let children = tree.child_nodes(node_id);
     if children.is_empty() {
         // Leaf node
         0.0
@@ -4410,7 +4438,7 @@ fn calculate_distance_to_root(tree: &Tree, node_id: dendros::NodeId) -> f64 {
     let mut current_id = node_id;
     let mut total_distance = 0.0;
 
-    while let Some(parent_id) = tree.parent_id(current_id) {
+    while let Some(parent_id) = tree.parent_node_id(current_id) {
         if let Some(node) = tree.node(Some(current_id)) {
             total_distance += node.branch_length().unwrap_or(0.0);
         }
@@ -4430,7 +4458,7 @@ fn calculate_node_depth(
     node_id: dendros::NodeId,
     current_depth: usize,
 ) -> usize {
-    let children = tree.children(node_id);
+    let children = tree.child_nodes(node_id);
     if children.is_empty() {
         current_depth
     } else {
