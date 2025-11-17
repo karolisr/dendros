@@ -12,3 +12,4 @@ submodules/*
 /z_old
 /other
 /docs/**/*.html
+Cargo.lock
