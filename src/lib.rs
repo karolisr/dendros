@@ -19,6 +19,7 @@ mod phylo;
 
 pub type TreeFloat = f32;
 pub type TreeInt = i32;
+pub type IndexRange = std::ops::RangeInclusive<usize>;
 
 pub use parsers::TreeParseError;
 pub use parsers::newick::parse_newick;

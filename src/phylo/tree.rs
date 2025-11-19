@@ -5,6 +5,7 @@ use super::edges::prepare_edges;
 use super::node::Node;
 use super::node::NodeId;
 use super::node::NodeType;
+use crate::IndexRange;
 use crate::TreeFloat;
 
 use rayon::prelude::*;
@@ -608,21 +609,24 @@ impl<'a> Tree {
     }
 
     pub fn height(&self) -> TreeFloat {
-        if let Some(id) = self.first_node_id {
-            let tip_ids = self.tip_node_ids_all();
+        if let Some(first_node_id) = self.first_node_id {
+            self.height_subtree(first_node_id)
+        } else {
+            0.0
+        }
+    }
 
-            // Use parallel processing for larger trees
-            if tip_ids.len() > 1000 {
-                tip_ids
-                    .par_iter()
-                    .map(|right| self.distance(id, *right))
-                    .reduce(|| 0.0, TreeFloat::max)
-            } else {
-                tip_ids
-                    .iter()
-                    .map(|right| self.distance(id, *right))
-                    .fold(0.0, TreeFloat::max)
-            }
+    pub fn height_subtree(&self, node_id: NodeId) -> TreeFloat {
+        let tip_ids = self.tip_node_ids(node_id);
+        tip_ids
+            .par_iter()
+            .map(|right| self.distance(node_id, *right))
+            .reduce(|| 0.0, TreeFloat::max)
+    }
+
+    pub fn height_at_node(&self, node_id: NodeId) -> TreeFloat {
+        if let Some(first_node_id) = self.first_node_id {
+            self.distance(first_node_id, node_id)
         } else {
             0.0
         }
@@ -776,6 +780,23 @@ impl<'a> Tree {
                 .sum::<usize>()
     }
 
+    pub fn descending_node_ids(&self, node_id: NodeId) -> Vec<NodeId> {
+        let mut result = Vec::new();
+        self.child_node_ids_recursive(node_id, &mut result);
+        result
+    }
+
+    fn child_node_ids_recursive(
+        &self,
+        node_id: NodeId,
+        result: &mut Vec<NodeId>,
+    ) {
+        result.push(node_id);
+        for child_id in self.child_node_ids(node_id) {
+            self.child_node_ids_recursive(*child_id, result);
+        }
+    }
+
     pub fn is_tip(&self, node_id: NodeId) -> bool {
         self.nodes[node_id].is_tip()
     }
@@ -828,30 +849,6 @@ impl<'a> Tree {
             }
         }
         count
-    }
-
-    pub fn bounding_tip_node_ids_for_clade(
-        &'a self,
-        node_id: NodeId,
-    ) -> (NodeId, NodeId) {
-        (
-            self.first_tip_node_id_for_clade(node_id),
-            self.last_tip_node_id_for_clade(node_id),
-        )
-    }
-
-    pub fn first_tip_node_id_for_clade(&'a self, node_id: NodeId) -> NodeId {
-        match self.first_child_node_id(node_id) {
-            Some(child_id) => self.first_tip_node_id_for_clade(*child_id),
-            None => node_id,
-        }
-    }
-
-    pub fn last_tip_node_id_for_clade(&'a self, node_id: NodeId) -> NodeId {
-        match self.last_child_node_id(node_id) {
-            Some(child_id) => self.last_tip_node_id_for_clade(*child_id),
-            None => node_id,
-        }
     }
 
     pub fn is_rooted(&self) -> bool {
@@ -1331,61 +1328,127 @@ impl<'a> Tree {
         self.node(Some(node_id))?.edge_index()
     }
 
-    pub fn bounding_tip_edges_for_clade(
+    pub fn edges_within_tip_index_range(
+        &self,
+        tip_index_range: IndexRange,
+    ) -> Option<&[Edge]> {
+        let edges = self.edges()?;
+        Some(&edges[tip_index_range])
+    }
+
+    pub fn bounding_tip_node_ids_for_clade(
+        &'a self,
+        node_id: NodeId,
+    ) -> (NodeId, NodeId) {
+        (
+            self.first_tip_node_id_for_clade(node_id),
+            self.last_tip_node_id_for_clade(node_id),
+        )
+    }
+
+    pub fn first_tip_node_id_for_clade(&'a self, node_id: NodeId) -> NodeId {
+        match self.first_child_node_id(node_id) {
+            Some(child_id) => self.first_tip_node_id_for_clade(*child_id),
+            None => node_id,
+        }
+    }
+
+    pub fn last_tip_node_id_for_clade(&'a self, node_id: NodeId) -> NodeId {
+        match self.last_child_node_id(node_id) {
+            Some(child_id) => self.last_tip_node_id_for_clade(*child_id),
+            None => node_id,
+        }
+    }
+
+    pub fn bounding_node_ids_for_clade(
         &self,
         node_id: NodeId,
-    ) -> Option<(&Edge, &Edge)> {
+    ) -> Option<(Vec<NodeId>, Vec<NodeId>)> {
         if !self.node_exists(Some(node_id)) {
             return None;
         }
 
-        let edges = self.edges()?;
-        let (tip_node_id_0, tip_node_id_1) =
+        let (top_tip_node_id, bottom_tip_node_id) =
             self.bounding_tip_node_ids_for_clade(node_id);
-        let start: &Edge =
-            &edges[self.edge_index_for_node_id(tip_node_id_0)?];
-        let end: &Edge = &edges[self.edge_index_for_node_id(tip_node_id_1)?];
 
-        Some((start, end))
+        let mut node_ids_top: Vec<NodeId> = Vec::new();
+        let mut node_ids_bottom: Vec<NodeId> = Vec::new();
+
+        let path_top = self.path(top_tip_node_id, node_id);
+        let path_bottom = self.path(bottom_tip_node_id, node_id);
+
+        node_ids_top.push(top_tip_node_id);
+
+        for path_node_id in path_top {
+            node_ids_top.push(path_node_id);
+        }
+
+        for &path_node_id in path_bottom.iter().rev() {
+            node_ids_bottom.push(path_node_id);
+        }
+
+        node_ids_bottom.push(bottom_tip_node_id);
+
+        Some((node_ids_top, node_ids_bottom))
     }
 
     pub fn bounding_edges_for_clade(
         &self,
         node_id: NodeId,
     ) -> Option<(Vec<Edge>, Vec<Edge>)> {
+        let (node_ids_top, node_ids_bottom) =
+            self.bounding_node_ids_for_clade(node_id)?;
+
+        let edges = self.edges()?;
+
+        let edges_top: Vec<Edge> = node_ids_top
+            .iter()
+            .filter_map(|&id| {
+                self.edge_index_for_node_id(id)
+                    .map(|edge_idx| edges[edge_idx].clone())
+            })
+            .collect();
+
+        let edges_bottom: Vec<Edge> = node_ids_bottom
+            .iter()
+            .filter_map(|&id| {
+                self.edge_index_for_node_id(id)
+                    .map(|edge_idx| edges[edge_idx].clone())
+            })
+            .collect();
+
+        Some((edges_top, edges_bottom))
+    }
+
+    pub fn bounding_tip_edge_index_range_for_clade(
+        &self,
+        node_id: NodeId,
+    ) -> Option<IndexRange> {
         if !self.node_exists(Some(node_id)) {
             return None;
         }
 
-        let edges = self.edges()?;
-
-        let (top_tip_node_id, bottom_tip_node_id) =
+        let (tip_node_id_1, tip_node_id_2) =
             self.bounding_tip_node_ids_for_clade(node_id);
 
-        let mut edges_top: Vec<Edge> = Vec::new();
-        let mut edges_bottom: Vec<Edge> = Vec::new();
+        let tip_edge_idx_1: usize =
+            self.edge_index_for_node_id(tip_node_id_1)?;
+        let tip_edge_idx_2: usize =
+            self.edge_index_for_node_id(tip_node_id_2)?;
 
-        let path_top = self.path(top_tip_node_id, node_id);
-        let path_bottom = self.path(bottom_tip_node_id, node_id);
+        Some(IndexRange::new(tip_edge_idx_1, tip_edge_idx_2))
+    }
 
-        edges_top
-            .push(edges[self.edge_index_for_node_id(top_tip_node_id)?].clone());
-
-        for path_node_id in path_top {
-            let edge = &edges[self.edge_index_for_node_id(path_node_id)?];
-            edges_top.push(edge.clone());
-        }
-
-        for &path_node_id in path_bottom.iter().rev() {
-            let edge = &edges[self.edge_index_for_node_id(path_node_id)?];
-            edges_bottom.push(edge.clone());
-        }
-
-        edges_bottom.push(
-            edges[self.edge_index_for_node_id(bottom_tip_node_id)?].clone(),
-        );
-
-        Some((edges_top, edges_bottom))
+    pub fn bounding_tip_edges_for_clade(
+        &self,
+        node_id: NodeId,
+    ) -> Option<(&Edge, &Edge)> {
+        let tip_edge_idx_range =
+            self.bounding_tip_edge_index_range_for_clade(node_id)?;
+        let edges = self.edges()?;
+        let tip_edge_1 = &edges[*tip_edge_idx_range.start()];
+        let tip_edge_2 = &edges[*tip_edge_idx_range.end()];
+        Some((tip_edge_1, tip_edge_2))
     }
 
     pub fn sort(&mut self, reverse: bool) {
