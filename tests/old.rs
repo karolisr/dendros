@@ -3616,7 +3616,7 @@ fn test_polytomy_branch_length_handling() {
             name
         );
 
-        let actual_height = tree.height();
+        let actual_height = tree.max_first_node_to_tip_distance();
         assert!(
             (actual_height - expected_height).abs() < 1e-6,
             "Height mismatch for {}: expected {}, got {}",

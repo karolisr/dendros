@@ -558,30 +558,13 @@ impl<'a> Tree {
         false
     }
 
-    pub fn tip_heights(&self) -> Vec<(NodeId, TreeFloat)> {
-        if let Some(first_node_id) = self.first_node_id {
-            let tip_nodes = self.tip_node_ids_all();
-            let mut heights = Vec::with_capacity(tip_nodes.len());
-
-            // Use parallel processing for larger trees
-            if tip_nodes.len() > 100 {
-                heights = tip_nodes
-                    .par_iter()
-                    .map(|&node_id| {
-                        (node_id, self.distance(first_node_id, node_id))
-                    })
-                    .collect();
-            } else {
-                for &node_id in &tip_nodes {
-                    heights
-                        .push((node_id, self.distance(first_node_id, node_id)));
-                }
-            }
-
-            heights
-        } else {
-            Vec::new()
-        }
+    fn node_tip_distances(&self, node_id: NodeId) -> Vec<(NodeId, TreeFloat)> {
+        self.tip_node_ids_all()
+            .par_iter()
+            .map(|&tip_node_id| {
+                (tip_node_id, self.distance(node_id, tip_node_id))
+            })
+            .collect()
     }
 
     pub fn is_ultrametric(&self, epsilon: TreeFloat) -> Option<bool> {
@@ -589,14 +572,16 @@ impl<'a> Tree {
             return None;
         }
 
-        let tip_heights = self.tip_heights();
-        if tip_heights.is_empty() {
+        let root_tip_distances =
+            self.node_tip_distances(self.first_node_id().unwrap());
+
+        if root_tip_distances.is_empty() {
             return Some(true);
         }
 
-        let first_height = tip_heights[0].1;
-        for (_, height) in tip_heights.iter().skip(1) {
-            if (first_height - height).abs() >= epsilon {
+        let first = root_tip_distances[0].1;
+        for (_, current) in root_tip_distances.iter().skip(1) {
+            if (first - current).abs() >= epsilon {
                 return Some(false);
             }
         }
@@ -608,15 +593,11 @@ impl<'a> Tree {
         self.has_branch_lengths
     }
 
-    pub fn height(&self) -> TreeFloat {
-        if let Some(first_node_id) = self.first_node_id {
-            self.height_subtree(first_node_id)
-        } else {
-            0.0
-        }
+    pub fn max_first_node_to_tip_distance(&self) -> TreeFloat {
+        self.max_node_to_tip_distance(self.first_node_id().unwrap())
     }
 
-    pub fn height_subtree(&self, node_id: NodeId) -> TreeFloat {
+    pub fn max_node_to_tip_distance(&self, node_id: NodeId) -> TreeFloat {
         let tip_ids = self.tip_node_ids(node_id);
         tip_ids
             .par_iter()
@@ -624,12 +605,8 @@ impl<'a> Tree {
             .reduce(|| 0.0, TreeFloat::max)
     }
 
-    pub fn height_at_node(&self, node_id: NodeId) -> TreeFloat {
-        if let Some(first_node_id) = self.first_node_id {
-            self.distance(first_node_id, node_id)
-        } else {
-            0.0
-        }
+    pub fn first_node_to_node_distance(&self, node_id: NodeId) -> TreeFloat {
+        self.distance(self.first_node_id().unwrap(), node_id)
     }
 
     pub fn distance(
@@ -1774,7 +1751,7 @@ impl<'a> Tree {
                 true => "Rooted",
                 false => "Unrooted",
             },
-            self.height(),
+            self.max_first_node_to_tip_distance(),
             self.has_branch_lengths()
         ));
 

@@ -24,7 +24,7 @@ pub struct Edge {
 
 pub(crate) fn prepare_edges(tree: &Tree) -> Vec<Edge> {
     let tip_count = tree.tip_count_all();
-    let tree_height = tree.height();
+    let tree_height = tree.max_first_node_to_tip_distance();
     let mut tip_id_counter = tip_count;
     if let Some(node_id) = &tree.first_node_id() {
         let (mut edges, _) = prepare_edges_recursive(
