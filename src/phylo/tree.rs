@@ -83,6 +83,35 @@ impl<'a> Tree {
         Self::default()
     }
 
+    pub fn subtree(&self, subtree_node_id: NodeId) -> Result<Self, TreeError> {
+        if !self.node_exists(Some(subtree_node_id)) {
+            return Err(TreeError::NodeDoesNotExist(subtree_node_id));
+        }
+
+        let mut subtree = self.clone();
+
+        subtree.edges = None;
+
+        let mut subtree_node_ids: HashSet<NodeId> =
+            HashSet::from_iter(subtree.descending_node_ids(subtree_node_id));
+
+        _ = subtree_node_ids.insert(subtree_node_id);
+
+        self.node_ids_all().iter().for_each(|node_id| {
+            if !subtree_node_ids.contains(node_id) {
+                _ = subtree.nodes.remove(*node_id);
+            }
+        });
+
+        if let Some(node) = subtree.node_mut(Some(subtree_node_id)) {
+            node.set_parent_id(None);
+        }
+
+        _ = subtree.validate()?;
+
+        Ok(subtree)
+    }
+
     pub fn add_new_node(
         &mut self,
         name: Option<impl Into<&'a str>>,
