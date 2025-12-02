@@ -1459,7 +1459,8 @@ impl<'a> Tree {
 
     pub fn sort(&mut self, reverse: bool) {
         if let Some(node_id) = self.first_node_id {
-            self.sort_nodes(node_id, reverse);
+            self.nodes[node_id].set_node_order(0);
+            self.sort_nodes(node_id, reverse, 1);
             self.edges = None;
             self.rebuild_edges();
         }
@@ -1471,7 +1472,7 @@ impl<'a> Tree {
         tree_cloned
     }
 
-    fn sort_nodes(&mut self, node_id: NodeId, reverse: bool) {
+    fn sort_nodes(&mut self, node_id: NodeId, reverse: bool, _order: usize) {
         let mut sorted_ids: Vec<NodeId> =
             self.nodes[node_id].child_ids().to_vec();
         sorted_ids.par_sort_by_key(|&c| self.child_node_count_recursive(c));
@@ -1479,9 +1480,17 @@ impl<'a> Tree {
             sorted_ids.reverse();
         }
         for &child_node_id in &sorted_ids {
-            self.sort_nodes(child_node_id, reverse);
+            self.sort_nodes(
+                child_node_id,
+                reverse,
+                _order + sorted_ids.len() + 1,
+            );
         }
-        self.nodes[node_id].set_child_ids(sorted_ids);
+        self.nodes[node_id].set_node_order(_order);
+        self.nodes[node_id].set_child_ids(sorted_ids.clone());
+        for (i, &node_id) in sorted_ids.iter().enumerate() {
+            self.nodes[node_id].set_node_order(_order + i + 1);
+        }
     }
 
     pub fn branch_attributes(

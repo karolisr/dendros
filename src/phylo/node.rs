@@ -41,6 +41,7 @@ pub struct Node {
     branch_attributes: HashMap<String, Attribute>,
     node_type: NodeType,
     edge_index: Option<usize>,
+    node_order: usize,
 }
 
 impl<'a> Node {
@@ -113,12 +114,20 @@ impl<'a> Node {
         }
     }
 
-    pub(crate) fn edge_index(&self) -> Option<usize> {
+    pub fn edge_index(&self) -> Option<usize> {
         self.edge_index
     }
 
     pub(crate) fn set_edge_index(&mut self, edge_index: usize) {
         self.edge_index = Some(edge_index);
+    }
+
+    pub fn node_order(&self) -> usize {
+        self.node_order
+    }
+
+    pub(crate) fn set_node_order(&mut self, node_order: usize) {
+        self.node_order = node_order;
     }
 
     pub fn node_id(&self) -> Option<NodeId> {

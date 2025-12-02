@@ -8,7 +8,7 @@ use std::{collections::HashMap, sync::Arc};
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Edge {
-    pub parent_node_id: Option<NodeId>,
+    pub parent_node_id: NodeId,
     pub node_id: NodeId,
     pub label: Option<Arc<str>>,
     pub branch_length: TreeFloat,
@@ -16,7 +16,7 @@ pub struct Edge {
     pub x0: TreeFloat,
     pub x_mid: TreeFloat,
     pub x1: TreeFloat,
-    pub y_parent: Option<TreeFloat>,
+    pub y_parent: TreeFloat,
     pub y: TreeFloat,
     pub is_tip: bool,
     pub edge_index: usize,
@@ -28,7 +28,7 @@ pub(crate) fn prepare_edges(tree: &Tree) -> Vec<Edge> {
     let mut tip_id_counter = tip_count;
     if let Some(node_id) = &tree.first_node_id() {
         let (mut edges, _) = prepare_edges_recursive(
-            *node_id, None, 0e0, tree, tree_height, tip_count,
+            *node_id, *node_id, 0e0, tree, tree_height, tip_count,
             &mut tip_id_counter,
         );
         edges = calculate_vertical_positions(edges);
@@ -41,7 +41,7 @@ pub(crate) fn prepare_edges(tree: &Tree) -> Vec<Edge> {
 
 fn prepare_edges_recursive(
     node_id: NodeId,
-    parent_node_id: Option<NodeId>,
+    parent_node_id: NodeId,
     parent_height: TreeFloat,
     tree: &Tree,
     tree_height: TreeFloat,
@@ -73,12 +73,7 @@ fn prepare_edges_recursive(
     let mut y_positions: Vec<TreeFloat> = Vec::new();
     for child_node_id in child_node_ids {
         let (mut child_edges, mut child_y_positions) = prepare_edges_recursive(
-            *child_node_id,
-            Some(node_id),
-            node_height,
-            tree,
-            tree_height,
-            tip_count,
+            *child_node_id, node_id, node_height, tree, tree_height, tip_count,
             tip_id_counter,
         );
 
@@ -110,7 +105,7 @@ fn prepare_edges_recursive(
         x0: parent_height,
         x_mid,
         x1: node_height,
-        y_parent: None,
+        y_parent: y,
         y,
         is_tip,
         edge_index: 0,
@@ -124,20 +119,13 @@ fn prepare_edges_recursive(
 fn calculate_vertical_positions(mut edges: Vec<Edge>) -> Vec<Edge> {
     let mut parent_y_positions: HashMap<NodeId, TreeFloat> = HashMap::new();
 
-    for edge in &edges {
-        if !edge.is_tip {
-            _ = parent_y_positions.insert(edge.node_id, edge.y);
-        }
-    }
+    edges.iter().filter(|edge| !edge.is_tip).for_each(|edge| {
+        _ = parent_y_positions.insert(edge.node_id, edge.y);
+    });
 
-    for edge in &mut edges {
-        if let Some(parent_id) = edge.parent_node_id {
-            let parent_y = parent_y_positions[&parent_id];
-            if parent_y != edge.y {
-                edge.y_parent = Some(parent_y);
-            }
-        }
-    }
+    edges.iter_mut().for_each(|edge| {
+        edge.y_parent = parent_y_positions[&edge.parent_node_id];
+    });
 
     edges
 }
