@@ -13,13 +13,13 @@ use std::sync::Arc;
 new_key_type! { pub struct NodeId; }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, PartialOrd, Ord, Eq)]
-pub(crate) enum NodeType {
-    #[default]
-    Unset,
-    Tip,
-    Internal,
+pub enum NodeType {
     FirstNode,
     Root,
+    Internal,
+    Tip,
+    #[default]
+    Unset,
 }
 
 /// Represents a node in a phylogenetic tree.
@@ -146,7 +146,7 @@ impl<'a> Node {
         self.parent_id = node_id;
     }
 
-    pub(crate) fn node_type(&self) -> NodeType {
+    pub fn node_type(&self) -> NodeType {
         self.node_type
     }
 
@@ -161,6 +161,8 @@ impl<'a> Node {
             self.node_type = NodeType::Root;
         } else if self.child_ids.len() <= 1 && self.parent_id.is_none() {
             self.node_type = NodeType::FirstNode;
+        } else {
+            self.node_type = NodeType::Unset;
         }
         self.node_type
     }

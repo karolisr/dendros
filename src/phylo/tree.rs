@@ -36,6 +36,9 @@ pub enum TreeError {
     #[error("Node with NodeId: {0} does not exist.")]
     NodeDoesNotExist(NodeId),
 
+    #[error("Node with NodeId: {0} cannot be removed.")]
+    NodeCannotBeRemoved(NodeId),
+
     #[error("Node with NodeId: {0} does not have a parent.")]
     NodeDoesNotHaveParent(NodeId),
 
@@ -92,10 +95,9 @@ impl<'a> Tree {
 
         subtree.edges = None;
 
-        let mut subtree_node_ids: HashSet<NodeId> =
-            HashSet::from_iter(subtree.descending_node_ids(subtree_node_id));
-
-        _ = subtree_node_ids.insert(subtree_node_id);
+        let subtree_node_ids: HashSet<NodeId> = HashSet::from_iter(
+            subtree.descending_node_ids(subtree_node_id, true),
+        );
 
         self.node_ids_all().iter().for_each(|node_id| {
             if !subtree_node_ids.contains(node_id) {
@@ -110,6 +112,62 @@ impl<'a> Tree {
         _ = subtree.validate()?;
 
         Ok(subtree)
+    }
+
+    pub fn can_node_be_removed(&self, node_id: NodeId) -> bool {
+        if let Some(first_node_id) = self.first_node_id
+            && node_id == first_node_id
+        {
+            false
+        } else {
+            self.tip_count_all() - self.tip_node_count_recursive(node_id) > 3
+        }
+    }
+
+    pub fn remove_node(
+        &mut self,
+        node_id: NodeId,
+    ) -> Result<NodeId, TreeError> {
+        if !self.can_node_be_removed(node_id) {
+            return Err(TreeError::NodeCannotBeRemoved(node_id));
+        }
+
+        if self.is_rooted() && !self.is_valid_potential_outgroup_node(node_id) {
+            // Is this a hack? Unroot to prevent triggering:
+            //
+            // ...
+            // else if self.child_ids.len() <= 1 && self.parent_id.is_none() {
+            //    self.node_type = NodeType::FirstNode;
+            // }
+            // ...
+            //
+            // in "node::Node::set_node_type"
+            //
+            // Doing this will result in a rooted tree after the removal of the node.
+            _ = self.unroot().map(|nd| nd.node_id())?;
+        }
+
+        let descending_node_ids = self.descending_node_ids(node_id, false);
+
+        let removed_node = self
+            .nodes
+            .remove(node_id)
+            .ok_or(TreeError::NodeDoesNotExist(node_id))?;
+
+        if let Some(parent_node_id) = removed_node.parent_id()
+            && let Some(parent_node) = self.nodes.get_mut(parent_node_id)
+        {
+            parent_node.remove_child_id(node_id);
+        }
+
+        descending_node_ids.iter().for_each(|dnid| {
+            _ = self.nodes.remove(*dnid);
+        });
+
+        self.edges = None;
+        _ = self.validate()?;
+
+        Ok(node_id)
     }
 
     pub fn add_new_node(
@@ -786,9 +844,16 @@ impl<'a> Tree {
                 .sum::<usize>()
     }
 
-    pub fn descending_node_ids(&self, node_id: NodeId) -> Vec<NodeId> {
+    pub fn descending_node_ids(
+        &self,
+        node_id: NodeId,
+        include_node_in_result: bool,
+    ) -> Vec<NodeId> {
         let mut result = Vec::new();
         self.child_node_ids_recursive(node_id, &mut result);
+        if !include_node_in_result {
+            _ = result.remove(0);
+        }
         result
     }
 
