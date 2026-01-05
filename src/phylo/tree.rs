@@ -836,12 +836,7 @@ impl<'a> Tree {
     }
 
     pub fn child_node_count_recursive(&self, node_id: NodeId) -> usize {
-        let children = self.child_node_ids(node_id);
-        children.len()
-            + children
-                .iter()
-                .map(|&child_id| self.child_node_count_recursive(child_id))
-                .sum::<usize>()
+        self.descending_node_ids(node_id, true).len()
     }
 
     pub fn descending_node_ids(
