@@ -5,7 +5,7 @@ use std::iter::zip;
 
 #[derive(Debug, Default)]
 pub struct LttPoint {
-    pub height: TreeFloat,
+    pub time: TreeFloat,
     pub count: usize,
 }
 
@@ -16,7 +16,7 @@ pub fn ltt(
 ) -> Vec<LttPoint> {
     let sample_every = 1e0 / sample_count as TreeFloat;
     let mut counts: Vec<usize> = Vec::new();
-    let mut heights: Vec<TreeFloat> = Vec::new();
+    let mut times: Vec<TreeFloat> = Vec::new();
 
     for sample_idx in 1..=sample_count {
         let relative_position = sample_idx as TreeFloat * sample_every;
@@ -28,11 +28,9 @@ pub fn ltt(
                 current_count += 1;
             }
         }
-        heights.push(relative_position * tree_height);
+        times.push(relative_position * tree_height);
         counts.push(current_count);
     }
 
-    zip(heights, counts)
-        .map(|(height, count)| LttPoint { height, count })
-        .collect()
+    zip(times, counts).map(|(time, count)| LttPoint { time, count }).collect()
 }
