@@ -4,7 +4,7 @@ use super::TreeParseError;
 use super::newick::attributes::extract_multiple_attribute_blocks;
 use super::newick::attributes::merge_attributes;
 use super::newick::attributes::remove_quotes;
-use super::newick::parse_newick;
+use crate::parsers::newick::parse_single_newick_tree;
 
 use std::collections::HashMap;
 
@@ -448,16 +448,12 @@ impl NexusParser {
     fn apply_translate_table(&mut self, tree: &mut Tree) {
         if let Some(translate_table) = &self.translate_table {
             for node_id in tree.tip_node_ids_all() {
-                if let Some(node) = tree.node_mut(Some(node_id)) {
-                    if let Some(label) = node.node_label() {
-                        if let Some(label_translated) =
-                            translate_table.get(label.as_ref())
-                        {
-                            node.set_node_label(Some(
-                                label_translated.as_str(),
-                            ));
-                        }
-                    }
+                if let Some(node) = tree.node_mut(Some(node_id))
+                    && let Some(label) = node.node_label()
+                    && let Some(label_translated) =
+                        translate_table.get(label.as_ref())
+                {
+                    node.set_node_label(Some(label_translated.as_str()));
                 }
             }
         }
@@ -521,24 +517,18 @@ impl NexusParser {
             };
 
             // Parse the NEWICK string using the existing parser
-            match parse_newick(newick_for_parsing) {
-                Ok(trees) => {
-                    if !trees.is_empty() {
-                        let mut tree = trees[0].clone();
+            match parse_single_newick_tree(newick_for_parsing) {
+                Ok(mut tree) => {
+                    // Merge taxa attributes with tree node attributes
+                    self.merge_taxa_attributes_with_tree(&mut tree)?;
 
-                        // Merge taxa attributes with tree node attributes
-                        self.merge_taxa_attributes_with_tree(&mut tree)?;
-
-                        if self.translate_table.is_some() {
-                            self.apply_translate_table(&mut tree);
-                        }
-
-                        let _ = self.nexus_file.trees.insert(tree_name, tree);
-                    } else {
-                        return Err(NexusError::InvalidTreeDefinition {
-                            definition: line.to_string(),
-                        });
+                    if self.translate_table.is_some() {
+                        self.apply_translate_table(&mut tree);
                     }
+
+                    tree.rebuild_edges();
+
+                    let _ = self.nexus_file.trees.insert(tree_name, tree);
                 }
                 Err(err) => {
                     return Err(NexusError::TreeParseError(err));

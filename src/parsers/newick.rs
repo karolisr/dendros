@@ -456,7 +456,8 @@ pub fn parse_newick(
     let tree_strings = split_multi_newick_string(&s_filtered);
 
     for tree_string in tree_strings {
-        let tree = parse_single_newick_tree(tree_string)?;
+        let mut tree = parse_single_newick_tree(tree_string)?;
+        tree.rebuild_edges();
         trees.push(tree);
     }
 
@@ -505,11 +506,12 @@ pub fn parse_newick(
 /// - Rooting preference errors are converted to TreeParseError
 ///
 /// **Side effects:**
-/// - This function calls `rebuild_edges()` to cache edge information
 /// - Tree is modified in-place during validation (node types are set, attributes unified)
 /// - Knuckle nodes (degree-2 vertices) are automatically removed during validation
 ///
-fn parse_single_newick_tree(s: String) -> Result<Tree, TreeParseError> {
+pub(crate) fn parse_single_newick_tree(
+    s: String,
+) -> Result<Tree, TreeParseError> {
     if !is_valid_newick_structure(&s) {
         return Err(TreeParseError::InvalidNewick);
     }
@@ -520,9 +522,6 @@ fn parse_single_newick_tree(s: String) -> Result<Tree, TreeParseError> {
     let mut tree = parse_newick_recursive(s_line_clean, None, Tree::default());
 
     let validation_result = tree.validate();
-    if validation_result.is_ok() {
-        tree.rebuild_edges();
-    }
 
     if validation_result.is_err() {
         validation_result.map_or_else(
