@@ -21,10 +21,9 @@ pub fn ltt(
     for sample_idx in 1..=sample_count {
         let relative_position = sample_idx as TreeFloat * sample_every;
         let mut current_count: usize = 0;
+        let margin = relative_position - sample_every / 1e1;
         for edge in edges {
-            if edge.x0 < relative_position
-                && edge.x1 >= relative_position - sample_every / 1e1
-            {
+            if edge.x0 < margin && edge.x1 > margin {
                 current_count += 1;
             }
         }
