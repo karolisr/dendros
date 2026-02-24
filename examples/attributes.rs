@@ -139,7 +139,7 @@ fn files(file_paths: &mut Vec<PathBuf>) {
         // "./tests/data/Czech_Huerta-Cepas_Stamatakis_2017/Czech_Huerta-Cepas_Stamatakis_2017_unrooted__node_and_branch_attributes.newick",
         // =====================================================================
         // "./tests/data/carnivore.tre",
-        "./tests/data/carnivore.tree",
+        // "./tests/data/carnivore.tree",
         // =====================================================================
         // "./tests/data/influenza.no.single.quotes.on.tips.tre",
         // "./tests/data/influenza.tre",
@@ -157,6 +157,7 @@ fn files(file_paths: &mut Vec<PathBuf>) {
         // "./tests/data/sumtrees.newick",
         // "./tests/data/tree01.tre",
         // "./tests/data/tree02.newick",
+        "./tests/data/beast01.nex",
         // =====================================================================
         // "./tests/data/raxml/bootstrap.newick",
         // "./tests/data/100_starting_trees.newick",
