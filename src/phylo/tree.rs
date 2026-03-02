@@ -31,7 +31,7 @@ pub struct Tree {
     has_branch_lengths: bool,
 }
 
-#[derive(Debug, Error)]
+#[derive(Debug, Error, Clone)]
 pub enum TreeError {
     #[error("Node with NodeId: {0} does not exist.")]
     NodeDoesNotExist(NodeId),

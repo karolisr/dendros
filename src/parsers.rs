@@ -9,7 +9,7 @@ use newick::parse_newick;
 use newick::validation::is_valid_newick_structure;
 use nexus::parse_nexus;
 
-#[derive(Debug, Error)]
+#[derive(Debug, Error, Clone)]
 pub enum TreeParseError {
     #[error("This does not seem to be valid NEWICK data.")]
     NotNexusInvalidNewick,
