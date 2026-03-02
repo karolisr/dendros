@@ -11,8 +11,7 @@ fn main() {
     //     tip_count_power_range.map(|x| 2_usize.pow(x)).collect();
 
     let tip_counts: Vec<usize> = vec![
-        5000, 10000, 50000, 100000, 250000, 500000, 750000,
-        1000000, 2000000,
+        5000, 10000, 50000, 100000, 250000, 500000, 750000, 1000000, 2000000,
     ];
 
     // Store timing results
