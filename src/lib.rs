@@ -38,5 +38,6 @@ pub use phylo::ltt::LttPoint;
 pub use phylo::ltt::ltt;
 pub use phylo::node::Node;
 pub use phylo::node::NodeId;
+pub use phylo::tree::AttributeSelector;
 pub use phylo::tree::Tree;
 pub use phylo::tree::TreeError;

@@ -9,7 +9,7 @@
     readme="README.md"
     repository="https://github.com/karolisr/dendros"
     rust-version="1.88"
-    version="0.19.3"
+    version="0.20.0"
 
 [lib]
     crate-type=["lib"]
@@ -19,6 +19,25 @@
     rayon="1.11.0"
     slotmap="1.1.1"
     thiserror="2.0.18"
+
+    [dependencies.clap]
+        default-features=false
+        features=[
+            # "debug",
+            "cargo",
+            "color",
+            "deprecated",
+            "derive",
+            "env",
+            "error-context",
+            "help",
+            "std",
+            "string",
+            "suggestions",
+            "unicode",
+            "usage",
+        ]
+        version="4.6.0"
 
 [dev-dependencies]
     criterion={version="0.8.2", features=["html_reports"]}

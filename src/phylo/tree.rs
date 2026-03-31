@@ -81,6 +81,14 @@ pub enum TreeError {
     },
 }
 
+#[derive(
+    Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, clap::ValueEnum,
+)]
+pub enum AttributeSelector {
+    Node,
+    Branch,
+}
+
 impl<'a> Tree {
     pub fn new() -> Self {
         Self::default()
@@ -1697,7 +1705,8 @@ impl<'a> Tree {
         }
 
         // Get the unified type for this attribute key across all nodes.
-        let unified_type = self.get_unified_attribute_type_for_key(key, false);
+        let unified_type = self
+            .get_unified_attribute_type_for_key(key, AttributeSelector::Node);
 
         // Get mutable reference to the node.
         let node = self.node_mut(Some(node_id)).unwrap();
@@ -1769,7 +1778,8 @@ impl<'a> Tree {
         }
 
         // Get the unified type for this attribute key across all nodes
-        let unified_type = self.get_unified_attribute_type_for_key(key, true);
+        let unified_type = self
+            .get_unified_attribute_type_for_key(key, AttributeSelector::Branch);
 
         // Get mutable reference to the node
         let node = self.node_mut(Some(node_id)).unwrap();
@@ -1806,17 +1816,16 @@ impl<'a> Tree {
     }
 
     /// Gets the unified type for a specific attribute key across all nodes.
-    fn get_unified_attribute_type_for_key(
+    pub fn get_unified_attribute_type_for_key(
         &self,
         key: &str,
-        is_branch: bool,
+        selector: AttributeSelector,
     ) -> Option<AttributeType> {
         let mut attribute_types: Vec<AttributeType> = Vec::new();
         for node in self.nodes.values() {
-            let attrs = if is_branch {
-                node.branch_attributes()
-            } else {
-                node.node_attributes()
+            let attrs = match selector {
+                AttributeSelector::Branch => node.branch_attributes(),
+                AttributeSelector::Node => node.node_attributes(),
             };
             if let Some(attr) = attrs.get(key) {
                 attribute_types.push(attr.get_type());

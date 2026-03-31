@@ -83,7 +83,7 @@ impl<'a> Node {
         self.node_label.clone()
     }
 
-    pub(crate) fn set_node_label(&mut self, name: Option<impl Into<&'a str>>) {
+    pub fn set_node_label(&mut self, name: Option<impl Into<&'a str>>) {
         self.node_label = name.map(|name| name.into().into());
     }
 
