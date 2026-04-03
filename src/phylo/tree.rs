@@ -1575,26 +1575,24 @@ impl<'a> Tree {
         self.nodes[node_id].node_attributes()
     }
 
-    pub fn branch_attribute_keys(&self) -> Vec<String> {
-        let mut result: HashSet<String> = HashSet::default();
-        for node in self.nodes.values() {
-            let attribute_keys: HashSet<String> = HashSet::from_iter(
-                self.branch_attributes(node.node_id().unwrap()).keys().cloned(),
-            );
-            result.extend(attribute_keys);
-        }
-        result.into_iter().collect()
-    }
+    pub fn attribute_keys(
+        &self,
+        attribute_selector: AttributeSelector,
+    ) -> Vec<String> {
+        let attr_fn = |node_id: NodeId| match attribute_selector {
+            AttributeSelector::Node => self.node_attributes(node_id),
+            AttributeSelector::Branch => self.branch_attributes(node_id),
+        };
 
-    pub fn node_attribute_keys(&self) -> Vec<String> {
-        let mut result: HashSet<String> = HashSet::default();
-        for node in self.nodes.values() {
-            let attribute_keys: HashSet<String> = HashSet::from_iter(
-                self.node_attributes(node.node_id().unwrap()).keys().cloned(),
-            );
-            result.extend(attribute_keys);
-        }
-        result.into_iter().collect()
+        let keys: HashSet<String> = self
+            .nodes
+            .keys()
+            .flat_map(|node_id| attr_fn(node_id).keys().cloned())
+            .collect();
+
+        let mut keys: Vec<String> = keys.iter().cloned().collect();
+        keys.sort();
+        keys
     }
 
     /// Rename a node attribute key across all nodes that have it.

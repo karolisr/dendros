@@ -78,7 +78,7 @@ fn prepare_table_rows(
     tree: &Tree,
     attribute_selector: AttributeSelector,
 ) -> Vec<Vec<String>> {
-    let attr_keys = attribute_keys(tree, attribute_selector);
+    let attr_keys = tree.attribute_keys(attribute_selector);
     tree.node_ids_all()
         .iter()
         .map(|&id| {
@@ -137,7 +137,7 @@ fn prepare_table_headers(
     tree: &Tree,
     attribute_selector: AttributeSelector,
 ) -> Vec<String> {
-    let attr_keys = attribute_keys(tree, attribute_selector);
+    let attr_keys = tree.attribute_keys(attribute_selector);
     let mut headers = vec!["node_id".to_string(), "node_label".to_string()];
     attr_keys.iter().for_each(|k| {
         if let Some(attr_type) =
@@ -158,24 +158,6 @@ fn prepare_table_headers(
         }
     });
     headers
-}
-
-fn attribute_keys(
-    tree: &Tree,
-    attribute_selector: AttributeSelector,
-) -> Vec<String> {
-    match attribute_selector {
-        AttributeSelector::Node => {
-            let mut node_attr_keys = tree.node_attribute_keys();
-            node_attr_keys.sort();
-            node_attr_keys
-        }
-        AttributeSelector::Branch => {
-            let mut branch_attr_keys = tree.branch_attribute_keys();
-            branch_attr_keys.sort();
-            branch_attr_keys
-        }
-    }
 }
 
 fn read_text_file(path_buf: PathBuf) -> String {

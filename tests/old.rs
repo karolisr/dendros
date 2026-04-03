@@ -79,7 +79,7 @@ fn test_rename_node_attribute_key_success() {
     let count = tree.rename_node_attribute_key("support", "bootstrap").unwrap();
     assert_eq!(count, 2);
 
-    let keys = tree.node_attribute_keys();
+    let keys = tree.attribute_keys(dendros::AttributeSelector::Node);
     assert!(keys.contains(&"bootstrap".to_string()));
     assert!(!keys.contains(&"support".to_string()));
 
@@ -120,7 +120,7 @@ fn test_rename_branch_attribute_key_success() {
         tree.rename_branch_attribute_key("rate", "substitution_rate").unwrap();
     assert_eq!(count, 2);
 
-    let keys = tree.branch_attribute_keys();
+    let keys = tree.attribute_keys(dendros::AttributeSelector::Branch);
     assert!(keys.contains(&"substitution_rate".to_string()));
     assert!(!keys.contains(&"rate".to_string()));
 
@@ -160,7 +160,7 @@ fn test_rename_to_existing_key_error() {
     let result = tree.rename_node_attribute_key("support", "age");
     assert!(matches!(result, Err(TreeError::AttributeKeyAlreadyExists(_))));
 
-    let keys = tree.node_attribute_keys();
+    let keys = tree.attribute_keys(dendros::AttributeSelector::Node);
     assert!(keys.contains(&"support".to_string()));
     assert!(keys.contains(&"age".to_string()));
 }
@@ -317,7 +317,7 @@ fn test_rename_nonexistent_attribute_key() {
         tree.rename_node_attribute_key("nonexistent", "new_key").unwrap();
     assert_eq!(count, 0);
 
-    let keys = tree.node_attribute_keys();
+    let keys = tree.attribute_keys(dendros::AttributeSelector::Node);
     assert!(!keys.contains(&"new_key".to_string()));
 }
 
