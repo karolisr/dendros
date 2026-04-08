@@ -89,6 +89,19 @@ pub enum AttributeSelector {
     Branch,
 }
 
+impl Display for AttributeSelector {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FormatterResult {
+        write!(
+            f,
+            "{}",
+            match self {
+                AttributeSelector::Node => "Node",
+                AttributeSelector::Branch => "Branch",
+            }
+        )
+    }
+}
+
 impl<'a> Tree {
     pub fn new() -> Self {
         Self::default()

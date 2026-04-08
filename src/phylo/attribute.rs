@@ -15,7 +15,7 @@ use std::string::ToString;
 /// Represents an attribute that can be associated with tree nodes or branches.
 ///
 /// Supports multiple data types and automatic type unification during tree validation.
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, PartialOrd)]
 pub enum Attribute {
     Integer(TreeInt),
     Decimal(TreeFloat),
@@ -25,7 +25,7 @@ pub enum Attribute {
 }
 
 /// Represents a single attribute value within a list.
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub enum AttributeValue {
     Integer(TreeInt),
     Decimal(TreeFloat),
@@ -34,12 +34,22 @@ pub enum AttributeValue {
 }
 
 /// Type signature for attribute values.
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum AttributeValueType {
     Integer,
     Decimal,
     Color,
     Text,
+}
+
+/// Type signature for attributes.
+#[derive(Clone, PartialEq, Debug)]
+pub enum AttributeType {
+    Integer,
+    Decimal,
+    Color,
+    Text,
+    List(Vec<AttributeValueType>),
 }
 
 impl Display for AttributeValueType {
@@ -55,16 +65,6 @@ impl Display for AttributeValueType {
             }
         )
     }
-}
-
-/// Type signature for attributes.
-#[derive(Clone, PartialEq, Debug)]
-pub enum AttributeType {
-    Integer,
-    Decimal,
-    Color,
-    Text,
-    List(Vec<AttributeValueType>),
 }
 
 impl Display for AttributeType {
