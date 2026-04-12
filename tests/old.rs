@@ -1,9 +1,9 @@
 #![allow(unused_must_use)]
 
 use dendros::{
-    Attribute, AttributeType, AttributeValue, AttributeValueType, NexusError,
-    NodeId, Tree, TreeError, TreeFloat, parse_newick, parse_nexus,
-    parse_nexus_advanced,
+    Attribute, AttributeSelector, AttributeType, AttributeValue,
+    AttributeValueType, NexusError, Node, NodeId, Tree, TreeError, TreeFloat,
+    parse_newick, parse_nexus, parse_nexus_advanced,
 };
 use std::collections::HashMap;
 use std::fs;
@@ -34,29 +34,53 @@ fn create_test_tree() -> Tree {
         tree.add_new_node(Some("child2"), Some(2.0), Some(root_id)).unwrap();
 
     let mut node1_attrs = HashMap::new();
-    let _ = node1_attrs.insert("support".to_string(), Attribute::Decimal(0.95));
-    let _ = node1_attrs.insert("age".to_string(), Attribute::Integer(100));
+    let _ = node1_attrs.insert(
+        "support".to_string(),
+        Attribute::Value(AttributeValue::Decimal(0.95)),
+    );
+    let _ = node1_attrs.insert(
+        "age".to_string(),
+        Attribute::Value(AttributeValue::Integer(100)),
+    );
     if let Some(node) = tree.node_mut(Some(child1_id)) {
         node.set_node_attributes(node1_attrs);
     }
 
     let mut node2_attrs = HashMap::new();
-    let _ = node2_attrs.insert("support".to_string(), Attribute::Decimal(0.87));
-    let _ = node2_attrs.insert("age".to_string(), Attribute::Integer(120));
+    let _ = node2_attrs.insert(
+        "support".to_string(),
+        Attribute::Value(AttributeValue::Decimal(0.87)),
+    );
+    let _ = node2_attrs.insert(
+        "age".to_string(),
+        Attribute::Value(AttributeValue::Integer(120)),
+    );
     if let Some(node) = tree.node_mut(Some(child2_id)) {
         node.set_node_attributes(node2_attrs);
     }
 
     let mut branch1_attrs = HashMap::new();
-    let _ = branch1_attrs.insert("rate".to_string(), Attribute::Decimal(0.01));
-    let _ = branch1_attrs.insert("length".to_string(), Attribute::Integer(5));
+    let _ = branch1_attrs.insert(
+        "rate".to_string(),
+        Attribute::Value(AttributeValue::Decimal(0.01)),
+    );
+    let _ = branch1_attrs.insert(
+        "length".to_string(),
+        Attribute::Value(AttributeValue::Integer(5)),
+    );
     if let Some(node) = tree.node_mut(Some(child1_id)) {
         node.set_branch_attributes(branch1_attrs);
     }
 
     let mut branch2_attrs = HashMap::new();
-    let _ = branch2_attrs.insert("rate".to_string(), Attribute::Decimal(0.02));
-    let _ = branch2_attrs.insert("length".to_string(), Attribute::Integer(7));
+    let _ = branch2_attrs.insert(
+        "rate".to_string(),
+        Attribute::Value(AttributeValue::Decimal(0.02)),
+    );
+    let _ = branch2_attrs.insert(
+        "length".to_string(),
+        Attribute::Value(AttributeValue::Integer(7)),
+    );
     if let Some(node) = tree.node_mut(Some(child2_id)) {
         node.set_branch_attributes(branch2_attrs);
     }
@@ -79,7 +103,7 @@ fn test_rename_node_attribute_key_success() {
     let count = tree.rename_node_attribute_key("support", "bootstrap").unwrap();
     assert_eq!(count, 2);
 
-    let keys = tree.attribute_keys(dendros::AttributeSelector::Node);
+    let keys = tree.attribute_keys(AttributeSelector::Node);
     assert!(keys.contains(&"bootstrap".to_string()));
     assert!(!keys.contains(&"support".to_string()));
 
@@ -91,13 +115,13 @@ fn test_rename_node_attribute_key_success() {
                     let attrs = node.node_attributes();
                     assert_eq!(
                         attrs.get("bootstrap"),
-                        Some(&Attribute::Decimal(0.95))
+                        Some(&Attribute::Value(AttributeValue::Decimal(0.95)))
                     );
                 } else if label.as_ref() == "child2" {
                     let attrs = node.node_attributes();
                     assert_eq!(
                         attrs.get("bootstrap"),
-                        Some(&Attribute::Decimal(0.87))
+                        Some(&Attribute::Value(AttributeValue::Decimal(0.87)))
                     );
                 }
             }
@@ -120,7 +144,7 @@ fn test_rename_branch_attribute_key_success() {
         tree.rename_branch_attribute_key("rate", "substitution_rate").unwrap();
     assert_eq!(count, 2);
 
-    let keys = tree.attribute_keys(dendros::AttributeSelector::Branch);
+    let keys = tree.attribute_keys(AttributeSelector::Branch);
     assert!(keys.contains(&"substitution_rate".to_string()));
     assert!(!keys.contains(&"rate".to_string()));
 
@@ -132,13 +156,13 @@ fn test_rename_branch_attribute_key_success() {
                     let attrs = node.branch_attributes();
                     assert_eq!(
                         attrs.get("substitution_rate"),
-                        Some(&Attribute::Decimal(0.01))
+                        Some(&Attribute::Value(AttributeValue::Decimal(0.01)))
                     );
                 } else if label.as_ref() == "child2" {
                     let attrs = node.branch_attributes();
                     assert_eq!(
                         attrs.get("substitution_rate"),
-                        Some(&Attribute::Decimal(0.02))
+                        Some(&Attribute::Value(AttributeValue::Decimal(0.02)))
                     );
                 }
             }
@@ -160,7 +184,7 @@ fn test_rename_to_existing_key_error() {
     let result = tree.rename_node_attribute_key("support", "age");
     assert!(matches!(result, Err(TreeError::AttributeKeyAlreadyExists(_))));
 
-    let keys = tree.attribute_keys(dendros::AttributeSelector::Node);
+    let keys = tree.attribute_keys(AttributeSelector::Node);
     assert!(keys.contains(&"support".to_string()));
     assert!(keys.contains(&"age".to_string()));
 }
@@ -178,12 +202,15 @@ fn test_change_node_attribute_value_success() {
 
     let child1_id = tree.node_id_by_label("child1").unwrap();
 
-    let new_value = Attribute::Decimal(0.99);
+    let new_value = Attribute::Value(AttributeValue::Decimal(0.99));
     tree.change_node_attribute_value(child1_id, "support", new_value).unwrap();
 
     if let Some(node) = tree.node(Some(child1_id)) {
         let attrs = node.node_attributes();
-        assert_eq!(attrs.get("support"), Some(&Attribute::Decimal(0.99)));
+        assert_eq!(
+            attrs.get("support"),
+            Some(&Attribute::Value(AttributeValue::Decimal(0.99)))
+        );
     }
 }
 
@@ -200,12 +227,15 @@ fn test_change_branch_attribute_value_success() {
 
     let child1_id = tree.node_id_by_label("child1").unwrap();
 
-    let new_value = Attribute::Decimal(0.015);
+    let new_value = Attribute::Value(AttributeValue::Decimal(0.015));
     tree.change_branch_attribute_value(child1_id, "rate", new_value).unwrap();
 
     if let Some(node) = tree.node(Some(child1_id)) {
         let attrs = node.branch_attributes();
-        assert_eq!(attrs.get("rate"), Some(&Attribute::Decimal(0.015)));
+        assert_eq!(
+            attrs.get("rate"),
+            Some(&Attribute::Value(AttributeValue::Decimal(0.015)))
+        );
     }
 }
 
@@ -222,12 +252,15 @@ fn test_change_attribute_value_integer_to_decimal_conversion() {
 
     let child1_id = tree.node_id_by_label("child1").unwrap();
 
-    let new_value = Attribute::Decimal(100.5);
+    let new_value = Attribute::Value(AttributeValue::Decimal(100.5));
     tree.change_node_attribute_value(child1_id, "age", new_value).unwrap();
 
     if let Some(node) = tree.node(Some(child1_id)) {
         let attrs = node.node_attributes();
-        assert_eq!(attrs.get("age"), Some(&Attribute::Decimal(100.5)));
+        assert_eq!(
+            attrs.get("age"),
+            Some(&Attribute::Value(AttributeValue::Decimal(100.5)))
+        );
     }
 }
 
@@ -244,7 +277,7 @@ fn test_change_attribute_value_incompatible_type_error() {
 
     let child1_id = tree.node_id_by_label("child1").unwrap();
 
-    let new_value = Attribute::Text("high".to_string());
+    let new_value = Attribute::Value(AttributeValue::Text("high".to_string()));
     let result =
         tree.change_node_attribute_value(child1_id, "support", new_value);
     assert!(matches!(
@@ -257,7 +290,10 @@ fn test_change_attribute_value_incompatible_type_error() {
 
     if let Some(node) = tree.node(Some(child1_id)) {
         let attrs = node.node_attributes();
-        assert_eq!(attrs.get("support"), Some(&Attribute::Decimal(0.95)));
+        assert_eq!(
+            attrs.get("support"),
+            Some(&Attribute::Value(AttributeValue::Decimal(0.95)))
+        );
     }
 }
 
@@ -274,7 +310,7 @@ fn test_change_nonexistent_attribute_error() {
 
     let child1_id = tree.node_id_by_label("child1").unwrap();
 
-    let new_value = Attribute::Decimal(0.5);
+    let new_value = Attribute::Value(AttributeValue::Decimal(0.5));
     let result =
         tree.change_node_attribute_value(child1_id, "nonexistent", new_value);
     assert!(matches!(
@@ -296,7 +332,7 @@ fn test_change_attribute_nonexistent_node_error() {
 
     let fake_node_id = NodeId::default();
 
-    let new_value = Attribute::Decimal(0.5);
+    let new_value = Attribute::Value(AttributeValue::Decimal(0.5));
     let result =
         tree.change_node_attribute_value(fake_node_id, "support", new_value);
     assert!(matches!(result, Err(TreeError::NodeDoesNotExist(_))));
@@ -317,7 +353,7 @@ fn test_rename_nonexistent_attribute_key() {
         tree.rename_node_attribute_key("nonexistent", "new_key").unwrap();
     assert_eq!(count, 0);
 
-    let keys = tree.attribute_keys(dendros::AttributeSelector::Node);
+    let keys = tree.attribute_keys(AttributeSelector::Node);
     assert!(!keys.contains(&"new_key".to_string()));
 }
 
@@ -334,12 +370,15 @@ fn test_change_attribute_value_preserves_other_attributes() {
 
     let child1_id = tree.node_id_by_label("child1").unwrap();
 
-    let new_value = Attribute::Decimal(0.99);
+    let new_value = Attribute::Value(AttributeValue::Decimal(0.99));
     tree.change_node_attribute_value(child1_id, "support", new_value).unwrap();
 
     if let Some(node) = tree.node(Some(child1_id)) {
         let attrs = node.node_attributes();
-        assert_eq!(attrs.get("age"), Some(&Attribute::Integer(100)));
+        assert_eq!(
+            attrs.get("age"),
+            Some(&Attribute::Value(AttributeValue::Integer(100)))
+        );
         assert_eq!(attrs.len(), 2);
     }
 }
@@ -405,10 +444,16 @@ fn test_attribute_type_unification_integer_to_decimal() {
     let node2_id = tree.add_new_node(Some("B"), None, Some(node1_id)).unwrap();
 
     let mut node1_attrs = HashMap::new();
-    let _ = node1_attrs.insert("support".to_string(), Attribute::Integer(95));
+    let _ = node1_attrs.insert(
+        "support".to_string(),
+        Attribute::Value(AttributeValue::Integer(95)),
+    );
 
     let mut node2_attrs = HashMap::new();
-    let _ = node2_attrs.insert("support".to_string(), Attribute::Decimal(97.5));
+    let _ = node2_attrs.insert(
+        "support".to_string(),
+        Attribute::Value(AttributeValue::Decimal(97.5)),
+    );
 
     tree.node_mut(Some(node1_id)).unwrap().set_node_attributes(node1_attrs);
     tree.node_mut(Some(node2_id)).unwrap().set_node_attributes(node2_attrs);
@@ -422,7 +467,10 @@ fn test_attribute_type_unification_integer_to_decimal() {
     let node2_support = node2_attrs.get("support").unwrap();
 
     match (node1_support, node2_support) {
-        (Attribute::Decimal(val1), Attribute::Decimal(val2)) => {
+        (
+            Attribute::Value(AttributeValue::Decimal(val1)),
+            Attribute::Value(AttributeValue::Decimal(val2)),
+        ) => {
             assert_eq!(*val1, 95.0);
             assert_eq!(*val2, 97.5);
         }
@@ -445,11 +493,16 @@ fn test_attribute_type_validation_incompatible_types() {
     let node2_id = tree.add_new_node(Some("B"), None, Some(node1_id)).unwrap();
 
     let mut node1_attrs = HashMap::new();
-    let _ = node1_attrs
-        .insert("value".to_string(), Attribute::Text("high".to_string()));
+    let _ = node1_attrs.insert(
+        "value".to_string(),
+        Attribute::Value(AttributeValue::Text("high".to_string())),
+    );
 
     let mut node2_attrs = HashMap::new();
-    let _ = node2_attrs.insert("value".to_string(), Attribute::Integer(42));
+    let _ = node2_attrs.insert(
+        "value".to_string(),
+        Attribute::Value(AttributeValue::Integer(42)),
+    );
 
     tree.node_mut(Some(node1_id)).unwrap().set_node_attributes(node1_attrs);
     tree.node_mut(Some(node2_id)).unwrap().set_node_attributes(node2_attrs);
@@ -584,12 +637,16 @@ fn test_branch_attribute_validation() {
     let node2_id = tree.add_new_node(Some("B"), None, Some(node1_id)).unwrap();
 
     let mut node1_branch_attrs = HashMap::new();
-    let _ = node1_branch_attrs
-        .insert("length".to_string(), Attribute::Integer(100));
+    let _ = node1_branch_attrs.insert(
+        "length".to_string(),
+        Attribute::Value(AttributeValue::Integer(100)),
+    );
 
     let mut node2_branch_attrs = HashMap::new();
-    let _ = node2_branch_attrs
-        .insert("length".to_string(), Attribute::Decimal(150.5));
+    let _ = node2_branch_attrs.insert(
+        "length".to_string(),
+        Attribute::Value(AttributeValue::Decimal(150.5)),
+    );
 
     tree.node_mut(Some(node1_id))
         .unwrap()
@@ -609,8 +666,14 @@ fn test_branch_attribute_validation() {
     let node1_length = node1_branch_attrs.get("length").unwrap();
     let node2_length = node2_branch_attrs.get("length").unwrap();
 
-    assert!(matches!(node1_length, Attribute::Decimal(_)));
-    assert!(matches!(node2_length, Attribute::Decimal(_)));
+    assert!(matches!(
+        node1_length,
+        Attribute::Value(AttributeValue::Decimal(_))
+    ));
+    assert!(matches!(
+        node2_length,
+        Attribute::Value(AttributeValue::Decimal(_))
+    ));
 }
 
 /// Tests that square bracket list syntax [item1,item2,...] is correctly parsed into list attributes.
@@ -675,9 +738,9 @@ fn test_range_syntax_converted_to_list() {
 /// Validates that the Display trait implementations produce expected formatted output for all attribute types.
 #[test]
 fn test_attribute_display_formatting() {
-    let text_attr = Attribute::Text("hello".to_string());
-    let int_attr = Attribute::Integer(42);
-    let decimal_attr = Attribute::Decimal(3.15);
+    let text_attr = Attribute::Value(AttributeValue::Text("hello".to_string()));
+    let int_attr = Attribute::Value(AttributeValue::Integer(42));
+    let decimal_attr = Attribute::Value(AttributeValue::Decimal(3.15));
     let list_attr = Attribute::List(vec![
         AttributeValue::Text("a".to_string()),
         AttributeValue::Integer(1),
@@ -728,14 +791,24 @@ fn test_complex_tree_attribute_validation() {
     let tip_ids = tree.tip_node_ids_all();
 
     let mut node1_attrs = HashMap::new();
-    let _ = node1_attrs.insert("support".to_string(), Attribute::Integer(95));
-    let _ = node1_attrs
-        .insert("method".to_string(), Attribute::Text("ML".to_string()));
+    let _ = node1_attrs.insert(
+        "support".to_string(),
+        Attribute::Value(AttributeValue::Integer(95)),
+    );
+    let _ = node1_attrs.insert(
+        "method".to_string(),
+        Attribute::Value(AttributeValue::Text("ML".to_string())),
+    );
 
     let mut node2_attrs = HashMap::new();
-    let _ = node2_attrs.insert("support".to_string(), Attribute::Decimal(87.5));
-    let _ = node2_attrs
-        .insert("method".to_string(), Attribute::Text("MP".to_string()));
+    let _ = node2_attrs.insert(
+        "support".to_string(),
+        Attribute::Value(AttributeValue::Decimal(87.5)),
+    );
+    let _ = node2_attrs.insert(
+        "method".to_string(),
+        Attribute::Value(AttributeValue::Text("MP".to_string())),
+    );
 
     tree.node_mut(Some(tip_ids[0])).unwrap().set_node_attributes(node1_attrs);
     tree.node_mut(Some(tip_ids[1])).unwrap().set_node_attributes(node2_attrs);
@@ -748,8 +821,8 @@ fn test_complex_tree_attribute_validation() {
     let attr1 = attrs1.get("support").unwrap();
     let attr2 = attrs2.get("support").unwrap();
 
-    assert!(matches!(attr1, Attribute::Decimal(_)));
-    assert!(matches!(attr2, Attribute::Decimal(_)));
+    assert!(matches!(attr1, Attribute::Value(AttributeValue::Decimal(_))));
+    assert!(matches!(attr2, Attribute::Value(AttributeValue::Decimal(_))));
 }
 
 // ============================================================================
@@ -768,7 +841,7 @@ fn test_hex_color_parsing_lowercase() {
     let color_str = "#ff3333";
     let attribute = Attribute::from_str(color_str).unwrap();
 
-    if let Attribute::Color(color) = attribute {
+    if let Attribute::Value(AttributeValue::Color(color)) = attribute {
         assert_eq!(color, "#FF3333");
     } else {
         panic!("Expected Color variant, got {:?}", attribute);
@@ -787,7 +860,7 @@ fn test_hex_color_parsing_uppercase() {
     let color_str = "#FF3333";
     let attribute = Attribute::from_str(color_str).unwrap();
 
-    if let Attribute::Color(color) = attribute {
+    if let Attribute::Value(AttributeValue::Color(color)) = attribute {
         assert_eq!(color, "#FF3333");
     } else {
         panic!("Expected Color variant, got {:?}", attribute);
@@ -806,7 +879,7 @@ fn test_hex_color_parsing_mixed_case() {
     let color_str = "#Ff33Aa";
     let attribute = Attribute::from_str(color_str).unwrap();
 
-    if let Attribute::Color(color) = attribute {
+    if let Attribute::Value(AttributeValue::Color(color)) = attribute {
         assert_eq!(color, "#FF33AA");
     } else {
         panic!("Expected Color variant, got {:?}", attribute);
@@ -825,7 +898,7 @@ fn test_hex_color_all_digits() {
     let color_str = "#123456";
     let attribute = Attribute::from_str(color_str).unwrap();
 
-    if let Attribute::Color(color) = attribute {
+    if let Attribute::Value(AttributeValue::Color(color)) = attribute {
         assert_eq!(color, "#123456");
     } else {
         panic!("Expected Color variant, got {:?}", attribute);
@@ -844,7 +917,7 @@ fn test_hex_color_all_letters() {
     let color_str = "#abcdef";
     let attribute = Attribute::from_str(color_str).unwrap();
 
-    if let Attribute::Color(color) = attribute {
+    if let Attribute::Value(AttributeValue::Color(color)) = attribute {
         assert_eq!(color, "#ABCDEF");
     } else {
         panic!("Expected Color variant, got {:?}", attribute);
@@ -863,7 +936,7 @@ fn test_invalid_hex_color_wrong_length() {
     let color_str = "#ff33";
     let attribute = Attribute::from_str(color_str).unwrap();
 
-    if let Attribute::Text(text) = attribute {
+    if let Attribute::Value(AttributeValue::Text(text)) = attribute {
         assert_eq!(text, "#ff33");
     } else {
         panic!("Expected Text variant, got {:?}", attribute);
@@ -882,7 +955,7 @@ fn test_invalid_hex_color_no_hash() {
     let color_str = "ff3333";
     let attribute = Attribute::from_str(color_str).unwrap();
 
-    if let Attribute::Text(text) = attribute {
+    if let Attribute::Value(AttributeValue::Text(text)) = attribute {
         assert_eq!(text, "ff3333");
     } else {
         panic!("Expected Text variant, got {:?}", attribute);
@@ -901,7 +974,7 @@ fn test_invalid_hex_color_invalid_characters() {
     let color_str = "#gg3333";
     let attribute = Attribute::from_str(color_str).unwrap();
 
-    if let Attribute::Text(text) = attribute {
+    if let Attribute::Value(AttributeValue::Text(text)) = attribute {
         assert_eq!(text, "#gg3333");
     } else {
         panic!("Expected Text variant, got {:?}", attribute);
@@ -920,7 +993,10 @@ fn test_color_attribute_type() {
     let color_str = "#ff3333";
     let attribute = Attribute::from_str(color_str).unwrap();
 
-    assert_eq!(attribute.get_type(), AttributeType::Color);
+    assert_eq!(
+        attribute.get_type(),
+        AttributeType::Value(AttributeValueType::Color)
+    );
 }
 
 /// Tests that color attributes format correctly using the Display trait.
@@ -965,7 +1041,7 @@ fn test_color_from_string() {
     let color_string = String::from("#abc123");
     let attribute = Attribute::from(color_string);
 
-    if let Attribute::Color(color) = attribute {
+    if let Attribute::Value(AttributeValue::Color(color)) = attribute {
         assert_eq!(color, "#ABC123");
     } else {
         panic!("Expected Color variant, got {:?}", attribute);
@@ -984,7 +1060,7 @@ fn test_color_from_str_reference() {
     let color_str = "#def456";
     let attribute = Attribute::from(color_str);
 
-    if let Attribute::Color(color) = attribute {
+    if let Attribute::Value(AttributeValue::Color(color)) = attribute {
         assert_eq!(color, "#DEF456");
     } else {
         panic!("Expected Color variant, got {:?}", attribute);
@@ -1000,9 +1076,9 @@ fn test_color_from_str_reference() {
 /// Validates that the PartialEq trait works correctly for color attribute values.
 #[test]
 fn test_color_equality() {
-    let attr1 = Attribute::Color("#FF3333".to_string());
-    let attr2 = Attribute::Color("#FF3333".to_string());
-    let attr3 = Attribute::Color("#FF3334".to_string());
+    let attr1 = Attribute::Value(AttributeValue::Color("#FF3333".to_string()));
+    let attr2 = Attribute::Value(AttributeValue::Color("#FF3333".to_string()));
+    let attr3 = Attribute::Value(AttributeValue::Color("#FF3334".to_string()));
 
     assert_eq!(attr1, attr2);
     assert_ne!(attr1, attr3);
@@ -1017,7 +1093,8 @@ fn test_color_equality() {
 /// Validates that the Clone trait produces identical copies of color attributes.
 #[test]
 fn test_color_clone() {
-    let original = Attribute::Color("#FF3333".to_string());
+    let original =
+        Attribute::Value(AttributeValue::Color("#FF3333".to_string()));
     let cloned = original.clone();
 
     assert_eq!(original, cloned);
@@ -1046,18 +1123,18 @@ fn test_attribute_format_compatibility() {
     assert_eq!(node_a_attrs.len(), 2);
     assert!(matches!(
         node_a_attrs.get("height"),
-        Some(dendros::Attribute::Decimal(100.0))
+        Some(Attribute::Value(AttributeValue::Decimal(100.0)))
     ));
     assert!(matches!(
         node_a_attrs.get("rate"),
-        Some(dendros::Attribute::Decimal(1.5))
+        Some(Attribute::Value(AttributeValue::Decimal(1.5)))
     ));
 
     let node_b_attrs = tree.node_attributes(tree.tip_node_ids_all()[1]);
     assert_eq!(node_b_attrs.len(), 1);
     assert!(matches!(
         node_b_attrs.get("posterior"),
-        Some(dendros::Attribute::Decimal(0.95))
+        Some(Attribute::Value(AttributeValue::Decimal(0.95)))
     ));
 }
 
@@ -1078,13 +1155,13 @@ fn test_beast_list_attributes() {
     let node_a_attrs = tree.node_attributes(tree.tip_node_ids_all()[0]);
     assert_eq!(node_a_attrs.len(), 1);
 
-    if let Some(dendros::Attribute::List(values)) = node_a_attrs.get("colour") {
+    if let Some(Attribute::List(values)) = node_a_attrs.get("colour") {
         assert_eq!(values.len(), 5);
-        assert!(matches!(values[0], dendros::AttributeValue::Integer(0)));
-        assert!(matches!(values[1], dendros::AttributeValue::Decimal(8.0)));
-        assert!(matches!(values[2], dendros::AttributeValue::Integer(1)));
-        assert!(matches!(values[3], dendros::AttributeValue::Decimal(12.0)));
-        assert!(matches!(values[4], dendros::AttributeValue::Integer(0)));
+        assert!(matches!(values[0], AttributeValue::Integer(0)));
+        assert!(matches!(values[1], AttributeValue::Decimal(8.0)));
+        assert!(matches!(values[2], AttributeValue::Integer(1)));
+        assert!(matches!(values[3], AttributeValue::Decimal(12.0)));
+        assert!(matches!(values[4], AttributeValue::Integer(0)));
     } else {
         panic!("BEAST colour should be parsed as List");
     }
@@ -1104,27 +1181,24 @@ fn test_iqtree_list_attributes() {
     let tree = &trees[0];
 
     let node_a_attrs = tree.node_attributes(tree.tip_node_ids_all()[0]);
-    if let Some(dendros::Attribute::List(values)) = node_a_attrs.get("!hilight")
-    {
+    if let Some(Attribute::List(values)) = node_a_attrs.get("!hilight") {
         assert_eq!(values.len(), 3);
-        assert!(matches!(values[0], dendros::AttributeValue::Integer(8)));
-        assert!(matches!(values[1], dendros::AttributeValue::Decimal(_)));
+        assert!(matches!(values[0], AttributeValue::Integer(8)));
+        assert!(matches!(values[1], AttributeValue::Decimal(_)));
         assert!(
-            matches!(values[2], dendros::AttributeValue::Color(ref s) if s == "#FF3333")
+            matches!(values[2], AttributeValue::Color(ref s) if s == "#FF3333")
         );
     } else {
         panic!("IQ-TREE !hilight should be parsed as List");
     }
 
     let node_b_attrs = tree.node_attributes(tree.tip_node_ids_all()[1]);
-    if let Some(dendros::Attribute::List(values)) =
-        node_b_attrs.get("!collapse")
-    {
+    if let Some(Attribute::List(values)) = node_b_attrs.get("!collapse") {
         assert_eq!(values.len(), 2);
         assert!(
-            matches!(values[0], dendros::AttributeValue::Text(ref s) if s == "collapsed")
+            matches!(values[0], AttributeValue::Text(ref s) if s == "collapsed")
         );
-        assert!(matches!(values[1], dendros::AttributeValue::Decimal(_)));
+        assert!(matches!(values[1], AttributeValue::Decimal(_)));
     } else {
         panic!("IQ-TREE !collapse should be parsed as List");
     }
@@ -1150,25 +1224,24 @@ fn test_mixed_format_compatibility() {
 
     assert!(matches!(
         node_a_attrs.get("height"),
-        Some(dendros::Attribute::Decimal(100.0))
+        Some(Attribute::Value(AttributeValue::Decimal(100.0)))
     ));
 
-    if let Some(dendros::Attribute::List(values)) = node_a_attrs.get("colour") {
+    if let Some(Attribute::List(values)) = node_a_attrs.get("colour") {
         assert_eq!(values.len(), 3);
-        assert!(matches!(values[0], dendros::AttributeValue::Integer(1)));
-        assert!(matches!(values[1], dendros::AttributeValue::Decimal(0.5)));
-        assert!(matches!(values[2], dendros::AttributeValue::Integer(2)));
+        assert!(matches!(values[0], AttributeValue::Integer(1)));
+        assert!(matches!(values[1], AttributeValue::Decimal(0.5)));
+        assert!(matches!(values[2], AttributeValue::Integer(2)));
     } else {
         panic!("Mixed format colour should be parsed as List");
     }
 
     let node_b_attrs = tree.node_attributes(tree.tip_node_ids_all()[1]);
-    if let Some(dendros::Attribute::List(values)) = node_b_attrs.get("!hilight")
-    {
+    if let Some(Attribute::List(values)) = node_b_attrs.get("!hilight") {
         assert_eq!(values.len(), 2);
-        assert!(matches!(values[0], dendros::AttributeValue::Integer(8)));
+        assert!(matches!(values[0], AttributeValue::Integer(8)));
         assert!(
-            matches!(values[1], dendros::AttributeValue::Color(ref s) if s == "#FF3333")
+            matches!(values[1], AttributeValue::Color(ref s) if s == "#FF3333")
         );
     } else {
         panic!("Mixed format !hilight should be parsed as List");
@@ -1190,14 +1263,14 @@ fn test_empty_list_attributes() {
     let tree = &trees[0];
 
     let node_a_attrs = tree.node_attributes(tree.tip_node_ids_all()[0]);
-    if let Some(dendros::Attribute::List(values)) = node_a_attrs.get("tags") {
+    if let Some(Attribute::List(values)) = node_a_attrs.get("tags") {
         assert_eq!(values.len(), 0, "Empty curly brace list should be empty");
     } else {
         panic!("Empty curly brace list should be parsed as List");
     }
 
     let node_b_attrs = tree.node_attributes(tree.tip_node_ids_all()[1]);
-    if let Some(dendros::Attribute::List(values)) = node_b_attrs.get("values") {
+    if let Some(Attribute::List(values)) = node_b_attrs.get("values") {
         assert_eq!(
             values.len(),
             0,
@@ -1223,13 +1296,13 @@ fn test_quoted_strings_in_lists() {
     let tree = &trees[0];
 
     let node_a_attrs = tree.node_attributes(tree.tip_node_ids_all()[0]);
-    if let Some(dendros::Attribute::List(values)) = node_a_attrs.get("labels") {
+    if let Some(Attribute::List(values)) = node_a_attrs.get("labels") {
         assert_eq!(values.len(), 2);
         assert!(
-            matches!(values[0], dendros::AttributeValue::Text(ref s) if s == "species A")
+            matches!(values[0], AttributeValue::Text(ref s) if s == "species A")
         );
         assert!(
-            matches!(values[1], dendros::AttributeValue::Text(ref s) if s == "population 1")
+            matches!(values[1], AttributeValue::Text(ref s) if s == "population 1")
         );
     } else {
         panic!("Quoted strings in list should be parsed correctly");
@@ -1251,18 +1324,18 @@ fn test_single_item_lists() {
     let tree = &trees[0];
 
     let node_a_attrs = tree.node_attributes(tree.tip_node_ids_all()[0]);
-    if let Some(dendros::Attribute::List(values)) = node_a_attrs.get("value") {
+    if let Some(Attribute::List(values)) = node_a_attrs.get("value") {
         assert_eq!(values.len(), 1);
-        assert!(matches!(values[0], dendros::AttributeValue::Integer(42)));
+        assert!(matches!(values[0], AttributeValue::Integer(42)));
     } else {
         panic!("Single-item curly brace should be parsed as List");
     }
 
     let node_b_attrs = tree.node_attributes(tree.tip_node_ids_all()[1]);
-    if let Some(dendros::Attribute::List(values)) = node_b_attrs.get("name") {
+    if let Some(Attribute::List(values)) = node_b_attrs.get("name") {
         assert_eq!(values.len(), 1);
         assert!(
-            matches!(values[0], dendros::AttributeValue::Text(ref s) if s == "text")
+            matches!(values[0], AttributeValue::Text(ref s) if s == "text")
         );
     } else {
         panic!("Single-item curly brace should be parsed as List");
@@ -1284,18 +1357,18 @@ fn test_special_characters_in_values() {
     let tree = &trees[0];
 
     let node_a_attrs = tree.node_attributes(tree.tip_node_ids_all()[0]);
-    if let Some(dendros::Attribute::List(values)) = node_a_attrs.get("color") {
+    if let Some(Attribute::List(values)) = node_a_attrs.get("color") {
         assert!(
-            matches!(values[0], dendros::AttributeValue::Color(ref s) if s == "#FF0000")
+            matches!(values[0], AttributeValue::Color(ref s) if s == "#FF0000")
         );
     } else {
         panic!("Hex color should be parsed as Text in List");
     }
 
     let node_b_attrs = tree.node_attributes(tree.tip_node_ids_all()[1]);
-    if let Some(dendros::Attribute::List(values)) = node_b_attrs.get("path") {
+    if let Some(Attribute::List(values)) = node_b_attrs.get("path") {
         assert!(
-            matches!(values[0], dendros::AttributeValue::Text(ref s) if s == "/usr/local/bin")
+            matches!(values[0], AttributeValue::Text(ref s) if s == "/usr/local/bin")
         );
     } else {
         panic!("Path should be parsed as Text in List");
@@ -1319,17 +1392,15 @@ fn test_negative_numbers() {
     let node_a_attrs = tree.node_attributes(tree.tip_node_ids_all()[0]);
     assert!(matches!(
         node_a_attrs.get("temp"),
-        Some(dendros::Attribute::Decimal(x)) if *x == -5.5
+        Some(Attribute::Value(AttributeValue::Decimal(x))) if *x == -5.5
     ));
 
     let node_b_attrs = tree.node_attributes(tree.tip_node_ids_all()[1]);
-    if let Some(dendros::Attribute::List(values)) = node_b_attrs.get("delta") {
+    if let Some(Attribute::List(values)) = node_b_attrs.get("delta") {
         assert_eq!(values.len(), 3);
-        assert!(matches!(values[0], dendros::AttributeValue::Integer(-1)));
-        assert!(
-            matches!(values[1], dendros::AttributeValue::Decimal(x) if x == -2.5)
-        );
-        assert!(matches!(values[2], dendros::AttributeValue::Integer(3)));
+        assert!(matches!(values[0], AttributeValue::Integer(-1)));
+        assert!(matches!(values[1], AttributeValue::Decimal(x) if x == -2.5));
+        assert!(matches!(values[2], AttributeValue::Integer(3)));
     } else {
         panic!("List with negative numbers should parse correctly");
     }
@@ -1350,7 +1421,9 @@ fn test_scientific_notation() {
     let tree = &trees[0];
 
     let node_a_attrs = tree.node_attributes(tree.tip_node_ids_all()[0]);
-    if let Some(dendros::Attribute::Decimal(val)) = node_a_attrs.get("prob") {
+    if let Some(Attribute::Value(AttributeValue::Decimal(val))) =
+        node_a_attrs.get("prob")
+    {
         assert!(
             (*val - 1.5e-10).abs() < 1e-15,
             "Scientific notation should be parsed correctly"
@@ -1360,14 +1433,14 @@ fn test_scientific_notation() {
     }
 
     let node_b_attrs = tree.node_attributes(tree.tip_node_ids_all()[1]);
-    if let Some(dendros::Attribute::List(values)) = node_b_attrs.get("values") {
+    if let Some(Attribute::List(values)) = node_b_attrs.get("values") {
         assert_eq!(values.len(), 2);
-        if let dendros::AttributeValue::Decimal(v1) = values[0] {
+        if let AttributeValue::Decimal(v1) = values[0] {
             assert!((v1 - 1e-5).abs() < 1e-10);
         } else {
             panic!("First value should be Decimal");
         }
-        if let dendros::AttributeValue::Decimal(v2) = values[1] {
+        if let AttributeValue::Decimal(v2) = values[1] {
             assert!((v2 - 2.5e-3).abs() < 1e-10);
         } else {
             panic!("Second value should be Decimal");
@@ -2024,7 +2097,7 @@ fn test_branch_annotations_and_attributes() {
             .iter()
             .find(|&&id| {
                 tree.node(Some(id))
-                    .and_then(dendros::Node::node_label)
+                    .and_then(Node::node_label)
                     .map(|l| l.as_ref() == node_with_attrs)
                     .unwrap_or(false)
             })
@@ -2752,7 +2825,7 @@ End;
     let tip_ids = tree.tip_node_ids_all();
     let species_a_node = tip_ids.iter().find(|&&id| {
         tree.node(Some(id))
-            .and_then(dendros::Node::node_label)
+            .and_then(Node::node_label)
             .map(|l| l.as_ref() == "Species A")
             .unwrap_or(false)
     });
@@ -3760,7 +3833,7 @@ struct NodeDegreeStats {
 }
 
 fn validate_polytomy_expectations(
-    tree: &dendros::Tree,
+    tree: &Tree,
     expected: &PolytomyExpectation,
     name: &str,
 ) {
@@ -3799,7 +3872,7 @@ fn validate_polytomy_expectations(
     );
 }
 
-fn has_multifurcating_nodes(tree: &dendros::Tree) -> bool {
+fn has_multifurcating_nodes(tree: &Tree) -> bool {
     let all_node_ids = tree.node_ids_all();
     for node_id in all_node_ids {
         let child_count = tree.child_node_ids(node_id).len();
@@ -3810,7 +3883,7 @@ fn has_multifurcating_nodes(tree: &dendros::Tree) -> bool {
     false
 }
 
-fn analyze_node_degrees(tree: &dendros::Tree) -> NodeDegreeStats {
+fn analyze_node_degrees(tree: &Tree) -> NodeDegreeStats {
     let mut degree_counts = std::collections::HashMap::new();
     let mut max_degree = 0;
 
@@ -4220,9 +4293,7 @@ fn test_node_labeling_and_property_analysis() {
             .tip_node_ids_all()
             .iter()
             .filter(|&&id| {
-                tree.node(Some(id))
-                    .and_then(dendros::Node::node_label)
-                    .is_some()
+                tree.node(Some(id)).and_then(Node::node_label).is_some()
             })
             .count();
 
@@ -4237,10 +4308,7 @@ fn test_node_labeling_and_property_analysis() {
             .iter()
             .filter(|&&id| {
                 !tree.is_tip(id)
-                    && tree
-                        .node(Some(id))
-                        .and_then(dendros::Node::node_label)
-                        .is_some()
+                    && tree.node(Some(id)).and_then(Node::node_label).is_some()
             })
             .count();
 
@@ -4407,7 +4475,7 @@ fn calculate_tree_height(tree: &Tree) -> TreeFloat {
     calculate_node_height(tree, root_id)
 }
 
-fn calculate_node_height(tree: &Tree, node_id: dendros::NodeId) -> TreeFloat {
+fn calculate_node_height(tree: &Tree, node_id: NodeId) -> TreeFloat {
     let children = tree.child_nodes(node_id);
     if children.is_empty() {
         // Leaf node
@@ -4435,10 +4503,7 @@ fn calculate_tip_distances(tree: &Tree) -> Vec<TreeFloat> {
     distances
 }
 
-fn calculate_distance_to_root(
-    tree: &Tree,
-    node_id: dendros::NodeId,
-) -> TreeFloat {
+fn calculate_distance_to_root(tree: &Tree, node_id: NodeId) -> TreeFloat {
     let mut current_id = node_id;
     let mut total_distance = 0.0;
 
@@ -4459,7 +4524,7 @@ fn calculate_max_depth(tree: &Tree) -> usize {
 
 fn calculate_node_depth(
     tree: &Tree,
-    node_id: dendros::NodeId,
+    node_id: NodeId,
     current_depth: usize,
 ) -> usize {
     let children = tree.child_nodes(node_id);

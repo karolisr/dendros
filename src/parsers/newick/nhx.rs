@@ -53,6 +53,7 @@ pub(crate) fn parse_nhx_attributes(s: &str) -> HashMap<String, Attribute> {
 
 #[cfg(test)]
 mod tests {
+    use super::super::super::super::phylo::attribute::AttributeValue;
     use super::*;
 
     #[test]
@@ -74,9 +75,18 @@ mod tests {
         assert_eq!(
             parse_nhx_attributes("A=nhx_a:B=1.123:C=100"),
             HashMap::from([
-                ("A".to_string(), Attribute::Text("nhx_a".into())),
-                ("C".to_string(), Attribute::Integer(100)),
-                ("B".to_string(), Attribute::Decimal(1.123))
+                (
+                    "A".to_string(),
+                    Attribute::Value(AttributeValue::Text("nhx_a".into()))
+                ),
+                (
+                    "C".to_string(),
+                    Attribute::Value(AttributeValue::Integer(100))
+                ),
+                (
+                    "B".to_string(),
+                    Attribute::Value(AttributeValue::Decimal(1.123))
+                )
             ])
         );
     }

@@ -1,5 +1,6 @@
 use super::attribute::Attribute;
 use super::attribute::AttributeType;
+use super::attribute::AttributeValueType;
 use super::edges::Edge;
 use super::edges::prepare_edges;
 use super::node::Node;
@@ -598,7 +599,7 @@ impl<'a> Tree {
 
         for (i, current_type) in types.iter().enumerate().skip(1) {
             if let Some(new_unified) =
-                Attribute::get_unified_type(&unified_type, current_type)
+                Attribute::unified_type(&unified_type, current_type)
             {
                 unified_type = new_unified;
             } else {
@@ -626,9 +627,10 @@ impl<'a> Tree {
 
         // Integer --> Decimal conversion.
         match (current_type, target_type) {
-            (AttributeType::Integer, AttributeType::Decimal) => {
-                Ok(attr.unify_to_decimal())
-            }
+            (
+                AttributeType::Value(AttributeValueType::Integer),
+                AttributeType::Value(AttributeValueType::Decimal),
+            ) => Ok(attr.unify_to_decimal()),
             (
                 AttributeType::List(current_items),
                 AttributeType::List(target_items),
@@ -1848,7 +1850,7 @@ impl<'a> Tree {
         let mut unified_type = attribute_types[0].clone();
         for current_type in attribute_types.iter().skip(1) {
             if let Some(new_unified) =
-                Attribute::get_unified_type(&unified_type, current_type)
+                Attribute::unified_type(&unified_type, current_type)
             {
                 unified_type = new_unified;
             } else {

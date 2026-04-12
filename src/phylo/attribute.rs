@@ -17,11 +17,15 @@ use std::string::ToString;
 /// Supports multiple data types and automatic type unification during tree validation.
 #[derive(Clone, PartialEq, PartialOrd)]
 pub enum Attribute {
-    Integer(TreeInt),
-    Decimal(TreeFloat),
-    Color(String),
-    Text(String),
+    Value(AttributeValue),
     List(Vec<AttributeValue>),
+}
+
+/// Type signature for attributes.
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
+pub enum AttributeType {
+    Value(AttributeValueType),
+    List(Vec<AttributeValueType>),
 }
 
 /// Represents a single attribute value within a list.
@@ -34,7 +38,7 @@ pub enum AttributeValue {
 }
 
 /// Type signature for attribute values.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub enum AttributeValueType {
     Integer,
     Decimal,
@@ -42,14 +46,27 @@ pub enum AttributeValueType {
     Text,
 }
 
-/// Type signature for attributes.
-#[derive(Clone, PartialEq, Debug)]
-pub enum AttributeType {
-    Integer,
-    Decimal,
-    Color,
-    Text,
-    List(Vec<AttributeValueType>),
+impl Display for AttributeType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FormatterResult {
+        write!(
+            f,
+            "{}",
+            match self {
+                AttributeType::Value(attribute_value_type) => {
+                    format!("Value({})", attribute_value_type)
+                }
+                AttributeType::List(attribute_value_types) => {
+                    let attribute_value_types_string: String =
+                        attribute_value_types
+                            .iter()
+                            .map(ToString::to_string)
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                    format!("List({})", attribute_value_types_string)
+                }
+            }
+        )
+    }
 }
 
 impl Display for AttributeValueType {
@@ -65,48 +82,6 @@ impl Display for AttributeValueType {
             }
         )
     }
-}
-
-impl Display for AttributeType {
-    fn fmt(&self, f: &mut Formatter<'_>) -> FormatterResult {
-        write!(
-            f,
-            "{}",
-            match self {
-                AttributeType::Integer => "Integer".to_string(),
-                AttributeType::Decimal => "Decimal".to_string(),
-                AttributeType::Color => "Color".to_string(),
-                AttributeType::Text => "Text".to_string(),
-                AttributeType::List(attribute_value_types) => {
-                    let attribute_value_types_string: String =
-                        attribute_value_types
-                            .iter()
-                            .map(ToString::to_string)
-                            .collect::<Vec<_>>()
-                            .join(", ");
-                    format!("List({})", attribute_value_types_string)
-                }
-            }
-        )
-    }
-}
-
-// =============================================================================
-// Helper functions
-// =============================================================================
-
-/// Check if a string represents a valid hex color pattern.
-fn is_hex_color(s: &str) -> bool {
-    if !s.starts_with('#') || s.len() != 7 {
-        return false;
-    }
-
-    s[1..].chars().all(|c| c.is_ascii_hexdigit())
-}
-
-/// Convert a hex color string to uppercase format.
-fn normalize_hex_color(s: &str) -> String {
-    format!("#{}", &s[1..].to_uppercase())
 }
 
 // =============================================================================
@@ -151,10 +126,12 @@ impl From<&str> for AttributeValue {
 impl Attribute {
     pub fn get_type(&self) -> AttributeType {
         match self {
-            Attribute::Integer(_) => AttributeType::Integer,
-            Attribute::Decimal(_) => AttributeType::Decimal,
-            Attribute::Color(_) => AttributeType::Color,
-            Attribute::Text(_) => AttributeType::Text,
+            Attribute::Value(value) => AttributeType::Value(match value {
+                AttributeValue::Integer(_) => AttributeValueType::Integer,
+                AttributeValue::Decimal(_) => AttributeValueType::Decimal,
+                AttributeValue::Color(_) => AttributeValueType::Color,
+                AttributeValue::Text(_) => AttributeValueType::Text,
+            }),
             Attribute::List(values) => {
                 let value_types = values
                     .iter()
@@ -177,7 +154,9 @@ impl Attribute {
     /// Convert an integer attribute to decimal if needed for type unification.
     pub fn unify_to_decimal(self) -> Self {
         match self {
-            Attribute::Integer(i) => Attribute::Decimal(i as TreeFloat),
+            Attribute::Value(AttributeValue::Integer(i)) => {
+                Attribute::Value(AttributeValue::Decimal(i as TreeFloat))
+            }
             Attribute::List(values) => {
                 let unified_values = values
                     .into_iter()
@@ -190,7 +169,7 @@ impl Attribute {
                     .collect();
                 Attribute::List(unified_values)
             }
-            other => other,
+            other @ Attribute::Value(_) => other,
         }
     }
 
@@ -203,9 +182,9 @@ impl Attribute {
             // Same types are always compatible.
             (a, b) if a == b => true,
 
-            // Integer and Decimal can be unified to Decimal.
-            (AttributeType::Integer, AttributeType::Decimal)
-            | (AttributeType::Decimal, AttributeType::Integer) => true,
+            (AttributeType::Value(a), AttributeType::Value(b)) => {
+                Self::can_unify_value_types(a, b)
+            }
 
             // Lists can be unified if they have the same length and compatible item types.
             (AttributeType::List(items1), AttributeType::List(items2)) => {
@@ -228,6 +207,7 @@ impl Attribute {
     ) -> bool {
         match (type1, type2) {
             (a, b) if a == b => true,
+            // Integer and Decimal can be unified to Decimal.
             (AttributeValueType::Integer, AttributeValueType::Decimal)
             | (AttributeValueType::Decimal, AttributeValueType::Integer) => {
                 true
@@ -237,7 +217,7 @@ impl Attribute {
     }
 
     /// Get the unified type for two compatible attribute types.
-    pub fn get_unified_type(
+    pub fn unified_type(
         type1: &AttributeType,
         type2: &AttributeType,
     ) -> Option<AttributeType> {
@@ -248,10 +228,8 @@ impl Attribute {
         match (type1, type2) {
             (a, b) if a == b => Some(a.clone()),
 
-            // Integer + Decimal = Decimal.
-            (AttributeType::Integer, AttributeType::Decimal)
-            | (AttributeType::Decimal, AttributeType::Integer) => {
-                Some(AttributeType::Decimal)
+            (AttributeType::Value(a), AttributeType::Value(b)) => {
+                Some(AttributeType::Value(Self::unified_value_type(a, b)))
             }
 
             // Lists: unify corresponding items.
@@ -259,7 +237,7 @@ impl Attribute {
                 let unified_items: Vec<AttributeValueType> = items1
                     .iter()
                     .zip(items2.iter())
-                    .map(|(t1, t2)| Self::get_unified_value_type(t1, t2))
+                    .map(|(t1, t2)| Self::unified_value_type(t1, t2))
                     .collect();
                 Some(AttributeType::List(unified_items))
             }
@@ -269,16 +247,19 @@ impl Attribute {
     }
 
     /// Get the unified type for two compatible attribute value types.
-    pub fn get_unified_value_type(
+    pub fn unified_value_type(
         type1: &AttributeValueType,
         type2: &AttributeValueType,
     ) -> AttributeValueType {
         match (type1, type2) {
             (a, b) if a == b => a.clone(),
+
+            // Integer + Decimal = Decimal.
             (AttributeValueType::Integer, AttributeValueType::Decimal)
             | (AttributeValueType::Decimal, AttributeValueType::Integer) => {
                 AttributeValueType::Decimal
             }
+
             _ => type1.clone(), // Should not happen if can_unify_value_types returned true.
         }
     }
@@ -287,15 +268,23 @@ impl Attribute {
 impl Debug for Attribute {
     fn fmt(&self, f: &mut Formatter<'_>) -> FormatterResult {
         match self {
-            Self::Text(arg0) => f.debug_tuple("Text").field(arg0).finish(),
-            Self::Decimal(arg0) => {
-                f.debug_tuple("Decimal").field(arg0).finish()
+            Self::Value(attr_val) => match attr_val {
+                AttributeValue::Text(t) => {
+                    f.debug_tuple("Text").field(t).finish()
+                }
+                AttributeValue::Decimal(d) => {
+                    f.debug_tuple("Decimal").field(d).finish()
+                }
+                AttributeValue::Integer(i) => {
+                    f.debug_tuple("Integer").field(i).finish()
+                }
+                AttributeValue::Color(c) => {
+                    f.debug_tuple("Color").field(c).finish()
+                }
+            },
+            Self::List(attr_vals) => {
+                f.debug_tuple("List").field(attr_vals).finish()
             }
-            Self::Integer(arg0) => {
-                f.debug_tuple("Integer").field(arg0).finish()
-            }
-            Self::Color(arg0) => f.debug_tuple("Color").field(arg0).finish(),
-            Self::List(values) => f.debug_tuple("List").field(values).finish(),
         }
     }
 }
@@ -306,20 +295,10 @@ impl Display for Attribute {
             f,
             "{}",
             match self {
-                Attribute::Integer(integer) => format!("{integer}"),
-                Attribute::Decimal(decimal) => format!("{decimal}"),
-                Attribute::Color(color) => color.to_string(),
-                Attribute::Text(text) => text.to_string(),
+                Attribute::Value(attr_val) => attr_val.to_string(),
                 Attribute::List(values) => {
-                    let items: Vec<String> = values
-                        .iter()
-                        .map(|v| match v {
-                            AttributeValue::Integer(i) => i.to_string(),
-                            AttributeValue::Decimal(d) => d.to_string(),
-                            AttributeValue::Color(c) => c.clone(),
-                            AttributeValue::Text(t) => t.clone(),
-                        })
-                        .collect();
+                    let items: Vec<String> =
+                        values.iter().map(ToString::to_string).collect();
                     format!("[{}]", items.join(","))
                 }
             }
@@ -337,14 +316,52 @@ impl From<String> for Attribute {
     fn from(s: String) -> Self {
         match s.parse() {
             Ok(attr) => attr,
-            Err(_) => Attribute::Text(s),
+            Err(_) => Attribute::Value(AttributeValue::Text(s)),
+        }
+    }
+}
+
+impl FromStr for Attribute {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.starts_with('[') && s.ends_with(']') {
+            let inner = &s[1..s.len() - 1];
+            let values = parse_list_syntax(inner)?;
+            Ok(Attribute::List(values))
+        } else if s.starts_with('{') && s.ends_with('}') {
+            let inner = &s[1..s.len() - 1];
+            let values = parse_curly_brace_syntax(inner)?;
+            Ok(Attribute::List(values))
+        } else if let Ok(integer) = s.parse::<TreeInt>() {
+            Ok(Attribute::Value(AttributeValue::Integer(integer)))
+        } else if let Ok(decimal) = s.parse::<TreeFloat>() {
+            Ok(Attribute::Value(AttributeValue::Decimal(decimal)))
+        } else if is_hex_color(s) {
+            Ok(Attribute::Value(AttributeValue::Color(normalize_hex_color(s))))
+        } else {
+            Ok(Attribute::Value(AttributeValue::Text(s.to_owned())))
         }
     }
 }
 
 // =============================================================================
-// Parsing
+// Helper functions
 // =============================================================================
+
+/// Check if a string represents a valid hex color pattern.
+fn is_hex_color(s: &str) -> bool {
+    if !s.starts_with('#') || s.len() != 7 {
+        return false;
+    }
+
+    s[1..].chars().all(|c| c.is_ascii_hexdigit())
+}
+
+/// Convert a hex color string to uppercase format.
+fn normalize_hex_color(s: &str) -> String {
+    format!("#{}", &s[1..].to_uppercase())
+}
 
 /// Parse list syntax: [item1,item2,...]
 fn parse_list_syntax(inner: &str) -> Result<Vec<AttributeValue>, ()> {
@@ -400,28 +417,4 @@ fn parse_curly_brace_syntax(inner: &str) -> Result<Vec<AttributeValue>, ()> {
     }
 
     Ok(values)
-}
-
-impl FromStr for Attribute {
-    type Err = ();
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if s.starts_with('[') && s.ends_with(']') {
-            let inner = &s[1..s.len() - 1];
-            let values = parse_list_syntax(inner)?;
-            Ok(Attribute::List(values))
-        } else if s.starts_with('{') && s.ends_with('}') {
-            let inner = &s[1..s.len() - 1];
-            let values = parse_curly_brace_syntax(inner)?;
-            Ok(Attribute::List(values))
-        } else if let Ok(integer) = s.parse::<TreeInt>() {
-            Ok(Attribute::Integer(integer))
-        } else if let Ok(decimal) = s.parse::<TreeFloat>() {
-            Ok(Attribute::Decimal(decimal))
-        } else if is_hex_color(s) {
-            Ok(Attribute::Color(normalize_hex_color(s)))
-        } else {
-            Ok(Attribute::Text(s.to_owned()))
-        }
-    }
 }

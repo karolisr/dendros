@@ -117,7 +117,7 @@ fn prepare_table_rows(
                                     .collect::<Vec<String>>()
                             }
                         }
-                        _ => {
+                        AttributeType::Value(_) => {
                             if let Some(value) = value_opt {
                                 vec![format!("{value}")]
                             } else {
@@ -152,7 +152,7 @@ fn prepare_table_headers(
                         .map(|(a, _)| format!("{k}_{}", a + 1))
                         .collect::<Vec<String>>()
                 }
-                _ => vec![format!("{k}")],
+                AttributeType::Value(_) => vec![format!("{k}")],
             };
             headers.extend(headers_local);
         }
